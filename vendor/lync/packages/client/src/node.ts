@@ -7,7 +7,6 @@ import {
   type StorageAdapterInterface,
   type StorageKey,
 } from "@automerge/automerge-repo";
-import { WebSocketClientAdapter } from "@automerge/automerge-repo-network-websocket";
 import {
   createAutomergeLooms,
   type AutomergeLoomsOptions,
@@ -17,7 +16,18 @@ import {
   type AutomergeLoomIndexesOptions,
 } from "../../index/src/automerge";
 import { createLoomClient } from "./create.js";
+import {
+  createWebSocketSyncAdapter,
+  type WebSocketSyncOptions,
+} from "./sync.js";
 import type { LoomClient } from "./types.js";
+
+export type {
+  SyncAuth,
+  SyncMode,
+  SyncStatus,
+  WebSocketSyncOptions,
+} from "./sync.js";
 
 export interface NodeLoomClientOptions<
   TPayload = unknown,
@@ -29,10 +39,8 @@ export interface NodeLoomClientOptions<
   repo?: Repo;
   storageDir?: string | false;
   syncUrl?: string | false;
-  websocket?: false | {
-    url: string;
-    retryInterval?: number;
-  };
+  sync?: false | WebSocketSyncOptions;
+  websocket?: false | WebSocketSyncOptions;
   repoConfig?: Omit<RepoConfig, "network" | "storage">;
   looms?: Omit<AutomergeLoomsOptions, "repo">;
   indexes?: Omit<AutomergeLoomIndexesOptions, "repo">;
@@ -67,13 +75,7 @@ export function createNodeLoomClient<
 }
 
 function createNodeRepo(options: NodeLoomClientOptions): Repo {
-  const websocket =
-    options.websocket ??
-    (options.syncUrl === undefined
-      ? false
-      : options.syncUrl === false
-        ? false
-        : { url: options.syncUrl });
+  const websocket = resolveWebSocketOptions(options);
 
   return new Repo({
     ...options.repoConfig,
@@ -84,13 +86,22 @@ function createNodeRepo(options: NodeLoomClientOptions): Repo {
     network:
       websocket === false
         ? []
-        : [
-            new WebSocketClientAdapter(
-              websocket.url,
-              websocket.retryInterval,
-            ),
-          ],
+        : [createWebSocketSyncAdapter(websocket)],
   });
+}
+
+function resolveWebSocketOptions(
+  options: NodeLoomClientOptions,
+): false | WebSocketSyncOptions {
+  return (
+    options.sync ??
+    options.websocket ??
+    (options.syncUrl === undefined
+      ? false
+      : options.syncUrl === false
+        ? false
+        : { url: options.syncUrl })
+  );
 }
 
 export class FileStorageAdapter implements StorageAdapterInterface {

@@ -198,6 +198,30 @@ await loom.appendTurn(null, { text: "First imported post" });
 await client.close();
 ```
 
+Node clients use Automerge's native WebSocket adapter by default when sync does
+not need custom headers, status callbacks, or required-mode error handling. You
+can request it explicitly with:
+
+```ts
+const client = createNodeLoomClient({
+  sync: {
+    url: "ws://localhost:3030/lync",
+    adapter: "native",
+  },
+});
+```
+
+Header-authenticated script clients should keep the resilient adapter:
+
+```ts
+const client = createNodeLoomClient({
+  sync: {
+    url: "wss://textile.quest/lync",
+    auth: { type: "bearer", token: process.env.TEXTILE_API_AUTH_TOKEN! },
+  },
+});
+```
+
 ## Sync Server
 
 `@lync/sync-server` provides a small Automerge WebSocket relay. Its default

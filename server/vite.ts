@@ -12,7 +12,7 @@ import wasm from "vite-plugin-wasm";
 import args from "server/args";
 import { setup_routes } from "server/apis/http";
 import { getMainProps } from "server/main_props";
-import { attachLyncServer } from "server/lync";
+import { attachLyncServer, closeLyncServer } from "server/lync";
 import { configureTrustedProxies } from "server/trustedProxy";
 import { requireSiteAccess, setupSiteAuthRoutes } from "server/siteAuth";
 
@@ -30,6 +30,28 @@ const index_html_path_prod = path.resolve(
 const ssr_path_dev = path.resolve(__dirname, "../server/ssr.tsx");
 const ssr_path_prod = path.resolve(__dirname, "../dist/server/ssr.js");
 const client_dir_prod = path.resolve(__dirname, "../dist/client");
+const client_assets_dir = path.resolve(__dirname, "../client/assets");
+let shutdownHandlersInstalled = false;
+
+function firstExistingPath(paths: string[]) {
+  return paths.find((candidate) => fs.existsSync(candidate));
+}
+
+function sendManifest(res: Response) {
+  const manifestPath = firstExistingPath([
+    path.resolve(client_dir_prod, "assets/manifest.webmanifest"),
+    path.resolve(client_dir_prod, "manifest.webmanifest"),
+    path.resolve(client_dir_prod, "client/manifest.webmanifest"),
+    path.resolve(__dirname, "../client/manifest.webmanifest"),
+  ]);
+
+  res.setHeader("Content-Type", "application/manifest+json");
+  if (manifestPath) {
+    res.sendFile(manifestPath);
+  } else {
+    res.status(404).send("Manifest not found");
+  }
+}
 
 export async function createServer() {
   if (mode === "production") {
@@ -94,6 +116,12 @@ export async function createServer() {
         return;
       }
 
+      if (filePath.endsWith(".webmanifest")) {
+        res.setHeader("Content-Type", "application/manifest+json");
+        res.setHeader("Cache-Control", "no-cache");
+        return;
+      }
+
       // Allow hashed build assets to be cached aggressively by browsers/CDNs
       const fileName = path.basename(filePath);
       if (/\.[a-f0-9]{8}\./.test(fileName)) {
@@ -107,6 +135,10 @@ export async function createServer() {
     app.use(
       "/client",
       express.static(client_dir_prod, { setHeaders: staticHeaders }),
+    );
+    app.use(
+      "/client/assets",
+      express.static(client_assets_dir, { setHeaders: staticHeaders }),
     );
   }
 
@@ -172,13 +204,11 @@ export async function createServer() {
   });
 
   app.get("/manifest.webmanifest", (req, res) => {
-    if (mode === "production") {
-      res.setHeader("Content-Type", "application/manifest+json");
-      res.sendFile(path.resolve(client_dir_prod, "manifest.webmanifest"));
-    } else {
-      res.setHeader("Content-Type", "application/manifest+json");
-      res.sendFile(path.resolve(__dirname, "../client/manifest.webmanifest"));
-    }
+    sendManifest(res);
+  });
+
+  app.get("/client/manifest.webmanifest", (req, res) => {
+    sendManifest(res);
   });
 
   app.get("*", async (req, res, next) => {
@@ -259,5 +289,44 @@ export async function createServer() {
     console.log(`Server listening on http://0.0.0.0:${port}`);
   });
 
+  installShutdownHandlers(http_server);
+
   return app;
+}
+
+function installShutdownHandlers(httpServer: http.Server) {
+  if (shutdownHandlersInstalled) return;
+  shutdownHandlersInstalled = true;
+
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Server] received ${signal}; closing HTTP and Lync sockets`);
+
+    const forceExit = setTimeout(() => {
+      console.error("[Server] graceful shutdown timed out");
+      process.exit(1);
+    }, 25_000);
+    forceExit.unref();
+
+    try {
+      await closeLyncServer();
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error?: Error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      clearTimeout(forceExit);
+      process.exit(0);
+    } catch (error) {
+      console.error("[Server] graceful shutdown failed", error);
+      clearTimeout(forceExit);
+      process.exit(1);
+    }
+  };
+
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
 }

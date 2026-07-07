@@ -75,6 +75,12 @@ scripts/server clients, or both. The API token is accepted as
 `Authorization: Bearer <token>` or `x-api-key`, including for `/lync` websocket
 sync upgrades.
 
+`/lync` websocket sync uses a 30s relay heartbeat by default. Set
+`LYNC_KEEPALIVE_INTERVAL_MS` if a deployment needs a different watchdog window.
+Set `LYNC_AUTH_MODE=public` to run `/lync` as a stock Automerge sync endpoint
+for native websocket clients; HTTP generation APIs remain protected by the
+normal site/API auth gates.
+
 
 ## Project layout
 

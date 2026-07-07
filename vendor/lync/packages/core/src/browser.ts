@@ -1,3 +1,4 @@
+import "@automerge/automerge";
 import { Repo, type RepoConfig } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
