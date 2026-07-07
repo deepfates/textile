@@ -141,26 +141,42 @@ describe("Textile story loom", () => {
     });
   });
 
-  it("rejects root revisions because root edits create new story looms", async () => {
+  it("projects root revisions without dropping generated children", async () => {
     const looms = createLooms();
     const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
     const loom = await looms.open(info.id);
 
     const original = await loom.appendTurn(null, { text: "Start" }, { role: "prose" });
+    await loom.appendTurn(original.id, { text: "Original child" }, { role: "prose" });
 
-    await expect(appendStoryRevision(
+    await appendStoryRevision(
       loom,
       null,
-      { text: "Edited root", continuations: [] },
+      { text: "Edited root", continuations: [{ text: "Split tail" }] },
       original.id,
-    )).rejects.toThrow("Root edits create a new story loom");
+    );
 
-    expect((await loom.childrenOf(null)).map((turn) => turn.payload.text)).toEqual([
-      "Start",
-    ]);
+    expect(await projectStoryTree(loom, "Start")).toEqual({
+      root: {
+        id: original.id,
+        text: "Edited root",
+        continuations: [
+          {
+            id: "turn-3",
+            text: "Original child",
+            continuations: [],
+          },
+          {
+            id: "turn-5",
+            text: "Split tail",
+            continuations: [],
+          },
+        ],
+      },
+    });
   });
 
-  it("projects the first seed turn rather than treating root siblings as edits", async () => {
+  it("ignores non-revision root siblings when projecting the seed story", async () => {
     const looms = createLooms();
     const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
     const loom = await looms.open(info.id);

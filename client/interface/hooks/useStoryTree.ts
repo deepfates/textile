@@ -3,7 +3,12 @@ import type { StoryNode, InFlight, GeneratingInfo } from "../types";
 import { useStoryGeneration } from "./useStoryGeneration";
 import type { ModelId } from "../../../shared/models";
 import type { LengthMode } from "../../../shared/lengthPresets";
-import { touchStoryUpdated } from "../utils/storyMeta";
+import {
+  getDefaultStoryKey,
+  getStoryMeta,
+  type StoryMetaMap,
+  touchStoryUpdated,
+} from "../utils/storyMeta";
 import {
   getPreferredChildIndex,
   setPreferredChildIndex,
@@ -81,6 +86,18 @@ export interface LoadedStoryEntries {
   titles: Record<string, string>;
   orderedIds: string[];
   skippedIds: string[];
+}
+
+export function chooseInitialStoryKey(
+  loaded: Pick<LoadedStoryEntries, "trees" | "orderedIds">,
+  previousKey?: string | null,
+  focusedKey?: string | null,
+  metaMap: StoryMetaMap = getStoryMeta(),
+): string | null {
+  if (focusedKey && loaded.trees[focusedKey]) return focusedKey;
+  if (previousKey && loaded.trees[previousKey]) return previousKey;
+  const defaultKey = getDefaultStoryKey(loaded.trees, metaMap);
+  return defaultKey ?? loaded.orderedIds[0] ?? null;
 }
 
 export async function loadReachableStoryEntries(
@@ -187,18 +204,14 @@ export function useStoryTree(params: StoryParams) {
       return;
     }
 
-    const firstKey = loaded.orderedIds[0];
     setLoomsById(loaded.loomsById);
     setTrees(loaded.trees);
     setStoryTitles(loaded.titles);
     setCurrentLoomId((prev) => {
       const focusedKey = focus?.kind !== "index" ? focus?.loomId : null;
-      const nextKey = focusedKey && loaded.trees[focusedKey]
-        ? focusedKey
-        : loaded.trees[prev]
-          ? prev
-          : firstKey;
-      const nextTree = loaded.trees[nextKey] ?? loaded.trees[firstKey] ?? INITIAL_STORY;
+      const nextKey = chooseInitialStoryKey(loaded, prev, focusedKey)
+        ?? loaded.orderedIds[0];
+      const nextTree = loaded.trees[nextKey] ?? INITIAL_STORY;
       setStoryTree(nextTree);
       let appliedFocus = false;
       if (focus?.kind !== "index" && focus?.turnId && loaded.trees[nextKey]) {
@@ -610,31 +623,6 @@ export function useStoryTree(params: StoryParams) {
 
       const parentNode = currentPath[currentDepth - 1];
       const parentId = parentNode?.id ?? null;
-      if (parentId === null) {
-        const title = `Story ${Object.keys(trees).length + 1}`;
-        const { info, loom: newLoom } = await createStoryLoom(
-          title,
-          revision.text,
-        );
-        const [rootTurn] = await newLoom.childrenOf(null);
-        if (rootTurn && revision.continuations?.length) {
-          await appendStoryDrafts(newLoom, rootTurn.id, revision.continuations);
-        }
-
-        const newTree = await projectStoryTree(
-          newLoom,
-          INITIAL_STORY.root.text,
-        );
-        setLoomsById((prev) => ({ ...prev, [info.id]: newLoom }));
-        setStoryTitles((prev) => ({ ...prev, [info.id]: title }));
-        setTrees((prev) => ({ ...prev, [info.id]: newTree }));
-        setCurrentLoomId(info.id);
-        setStoryTree(newTree);
-        setCurrentDepth(0);
-        setSelectedOptions([0]);
-        touchStoryUpdated(info.id, { alsoActive: true });
-        return;
-      }
 
       const appended = await appendStoryRevision(
         loom,

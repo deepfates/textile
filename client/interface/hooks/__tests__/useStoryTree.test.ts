@@ -3,6 +3,7 @@ import { loomRef } from "../../../../vendor/lync/packages/core/src/references";
 import { createTestLoomClient } from "../../../../vendor/lync/packages/client/src/testing";
 import { textStoryLoomMeta } from "../../../../vendor/lync/packages/core/src/profiles/text-story";
 import {
+  chooseInitialStoryKey,
   INITIAL_STORY,
   loadReachableStoryEntries,
 } from "../useStoryTree";
@@ -57,5 +58,45 @@ describe("loadReachableStoryEntries", () => {
     expect(loaded.trees[info.id].root.text).toBe("Reachable opening");
 
     await client.close();
+  });
+});
+
+describe("chooseInitialStoryKey", () => {
+  const loaded = {
+    orderedIds: ["story-a", "story-b"],
+    trees: {
+      "story-a": { root: { id: "a", text: "A", continuations: [] } },
+      "story-b": { root: { id: "b", text: "B", continuations: [] } },
+    },
+  };
+
+  it("boots the most recently active story instead of index order", () => {
+    expect(
+      chooseInitialStoryKey(loaded, null, null, {
+        "story-a": {
+          key: "story-a",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-02T00:00:00.000Z",
+        },
+        "story-b": {
+          key: "story-b",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-05T00:00:00.000Z",
+          openCount: 3,
+        },
+      }),
+    ).toBe("story-b");
+  });
+
+  it("keeps explicit focus above metadata recency", () => {
+    expect(
+      chooseInitialStoryKey(loaded, null, "story-a", {
+        "story-b": {
+          key: "story-b",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-05T00:00:00.000Z",
+        },
+      }),
+    ).toBe("story-a");
   });
 });
