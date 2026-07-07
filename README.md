@@ -61,7 +61,7 @@ echo "OPENROUTER_API_KEY=your_key" > .env
 bun run dev
 ```
 
-Dev server runs at `localhost:4000`.
+Dev server runs at `localhost:5173` on macOS, `localhost:5000` elsewhere (see `server/args.ts`; override with `PORT=`).
 
 For production:
 ```bash
