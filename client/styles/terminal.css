@@ -286,6 +286,65 @@ html, body {
   box-sizing: border-box;
 }
 
+.terminal-screen.nav-bonk {
+  animation: nav-bonk-flash 180ms ease-out;
+}
+
+.terminal-screen.nav-bonk-up {
+  animation-name: nav-bonk-up, nav-bonk-flash;
+}
+
+.terminal-screen.nav-bonk-right {
+  animation-name: nav-bonk-right, nav-bonk-flash;
+}
+
+.terminal-screen.nav-bonk-down {
+  animation-name: nav-bonk-down, nav-bonk-flash;
+}
+
+.terminal-screen.nav-bonk-left {
+  animation-name: nav-bonk-left, nav-bonk-flash;
+}
+
+@keyframes nav-bonk-flash {
+  0%, 100% { border-color: var(--theme-text); }
+  35% { border-color: var(--theme-focused-foreground); }
+}
+
+@keyframes nav-bonk-up {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-2px); }
+  70% { transform: translateY(1px); }
+}
+
+@keyframes nav-bonk-right {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(2px); }
+  70% { transform: translateX(-1px); }
+}
+
+@keyframes nav-bonk-down {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(2px); }
+  70% { transform: translateY(-1px); }
+}
+
+@keyframes nav-bonk-left {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-2px); }
+  70% { transform: translateX(1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-screen.nav-bonk,
+  .terminal-screen.nav-bonk-up,
+  .terminal-screen.nav-bonk-right,
+  .terminal-screen.nav-bonk-down,
+  .terminal-screen.nav-bonk-left {
+    animation-name: nav-bonk-flash;
+  }
+}
+
 .landscape .terminal-screen {
   grid-area: screen;
   height: 100%;

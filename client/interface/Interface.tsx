@@ -107,6 +107,9 @@ export const GamepadInterface = () => {
     availableFonts,
   } = useTheme();
   const [lastMapNodeId, setLastMapNodeId] = useState<string | null>(null);
+  const [bonkDirection, setBonkDirection] = useState<
+    "up" | "right" | "down" | "left" | null
+  >(null);
 
   // (select menu navigation now handled in useMenuSystem)
 
@@ -1172,6 +1175,25 @@ export const GamepadInterface = () => {
     ]
   );
 
+  const triggerBonk = useCallback((key: string) => {
+    const direction =
+      key === "ArrowUp"
+        ? "up"
+        : key === "ArrowRight"
+          ? "right"
+          : key === "ArrowDown"
+            ? "down"
+            : key === "ArrowLeft"
+              ? "left"
+              : null;
+    if (!direction) return;
+    setBonkDirection(null);
+    window.setTimeout(() => setBonkDirection(direction), 0);
+    window.setTimeout(() => {
+      setBonkDirection((current) => (current === direction ? null : current));
+    }, 180);
+  }, []);
+
   const handleControlAction = useCallback(
     async (key: string) => {
       // EDIT overlay — EditMenu owns keyboard via its own window listener.
@@ -1293,7 +1315,9 @@ export const GamepadInterface = () => {
           });
           return;
         }
-        await handleStoryNavigation(key);
+        if (!(await handleStoryNavigation(key))) {
+          triggerBonk(key);
+        }
         return;
       }
 
@@ -1310,7 +1334,9 @@ export const GamepadInterface = () => {
         setScreen("edit");
         return;
       }
-      await handleStoryNavigation(key);
+      if (!(await handleStoryNavigation(key))) {
+        triggerBonk(key);
+      }
     },
     [
       closeDrawer,
@@ -1337,6 +1363,7 @@ export const GamepadInterface = () => {
       setScreen,
       setSelectedTreeColumn,
       setSelectedTreeIndex,
+      triggerBonk,
     ]
   );
 
@@ -1528,7 +1555,10 @@ export const GamepadInterface = () => {
         }`}
       >
         {/* Screen area */}
-        <section className="terminal-screen" aria-label="Story Display">
+        <section
+          className={`terminal-screen${bonkDirection ? ` nav-bonk nav-bonk-${bonkDirection}` : ""}`}
+          aria-label="Story Display"
+        >
           {/* Unified top mode bar */}
           {(() => {
             const inModelEditor =

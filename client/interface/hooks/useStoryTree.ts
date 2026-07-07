@@ -633,6 +633,12 @@ export function useStoryTree(params: StoryParams) {
       const updatedTree = await refreshTreeFromLoom(currentLoomId, loom);
       touchStoryUpdated(currentLoomId);
 
+      if (parentId === null) {
+        setCurrentDepth(0);
+        setSelectedOptions([0]);
+        return;
+      }
+
       const updatedParent =
         (() => {
           const findNode = (node: StoryNode): StoryNode | null => {
@@ -669,7 +675,7 @@ export function useStoryTree(params: StoryParams) {
   );
 
   const handleStoryNavigation = useCallback(
-    async (key: string) => {
+    async (key: string): Promise<boolean> => {
       // Allow arrow/backspace navigation during generation, but prevent new
       // generations from the same node if it's already generating.
       const currentPath = getCurrentPath();
@@ -677,17 +683,18 @@ export function useStoryTree(params: StoryParams) {
       if (!currentNode) {
         setCurrentDepth(0);
         setSelectedOptions([0]);
-        return;
+        return true;
       }
-      if (key === "Enter" && isGeneratingAt(currentNode.id)) return;
+      if (key === "Enter" && isGeneratingAt(currentNode.id)) return false;
 
       const options = getOptionsAtDepth(currentDepth);
       const currentOption = selectedOptions[currentDepth] ?? 0;
 
       switch (key) {
         case "ArrowUp":
+          if (currentDepth <= 0) return false;
           setCurrentDepth((prev) => Math.max(0, prev - 1));
-          break;
+          return true;
         case "ArrowDown":
           if (currentDepth < currentPath.length - 1) {
             setCurrentDepth((prev) => prev + 1);
@@ -709,8 +716,9 @@ export function useStoryTree(params: StoryParams) {
                 });
               }
             }
+            return true;
           }
-          break;
+          return false;
         case "ArrowLeft":
           if (options.length > 1 && currentOption > 0) {
             setSelectedOptions((prev) => {
@@ -723,8 +731,9 @@ export function useStoryTree(params: StoryParams) {
               currentDepth,
               currentOption - 1,
             );
+            return true;
           }
-          break;
+          return false;
         case "ArrowRight":
           if (options.length > 1 && currentOption < options.length - 1) {
             setSelectedOptions((prev) => {
@@ -737,12 +746,13 @@ export function useStoryTree(params: StoryParams) {
               currentDepth,
               currentOption + 1,
             );
+            return true;
           }
-          break;
+          return false;
         case "Enter": {
-          if (error) return;
+          if (error) return false;
           const loom = loomsById[currentLoomId];
-          if (!loom) return;
+          if (!loom) return false;
 
           const currentNode = currentPath[currentDepth];
           const hasExistingContinuations =
@@ -810,9 +820,10 @@ export function useStoryTree(params: StoryParams) {
               return newInfo;
             });
           }
-          break;
+          return true;
         }
       }
+      return true;
     },
     [
       error,
