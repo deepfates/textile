@@ -15,6 +15,8 @@ import {
   getBoundaryRegex as helperGetBoundaryRegex,
   findBoundaryCutoff as helperFindBoundaryCutoff,
   normalizeJoin as helperNormalizeJoin,
+  prepareGeneratedText,
+  shouldDeferPossiblePreamble,
 } from "./generation.helpers";
 import { validateGenerateRequestBody } from "./validators";
 
@@ -89,7 +91,13 @@ export async function generateText(req: Request, res: Response) {
     const stream = await openai.completions.create(
       {
         model,
-        prompt,
+        prompt: [
+          "Continue the story directly from the supplied text.",
+          "Return only prose that belongs in the story.",
+          "Do not include assistant preambles, explanations, labels, or Markdown emphasis.",
+          "",
+          prompt,
+        ].join("\n"),
         temperature: temperature ?? modelConfig.defaultTemp,
         max_tokens: maxTokensToUse,
         // Omit upstream 'stop'; semantic stopping is handled server-side via boundary detection.
@@ -152,13 +160,17 @@ export async function generateText(req: Request, res: Response) {
       if (!delta) continue;
 
       accumulated += delta;
+      const prepared = prepareGeneratedText(prompt, accumulated);
+      if (!prepared && shouldDeferPossiblePreamble(accumulated)) {
+        continue;
+      }
 
       // Special handling for word mode: emit complete tokens
       if (mode === "word") {
-        wordModeBuffer += delta;
+        wordModeBuffer = prepared.slice(sentIndex);
 
         // If this token contains non-whitespace, we've found our word
-        if (NON_WHITESPACE_RE.test(delta)) {
+        if (NON_WHITESPACE_RE.test(wordModeBuffer)) {
           // Emit the accumulated buffer
           // In word mode, preserve whitespace as generated (it acts as the separator)
           const toSend = wordModeBuffer;
@@ -182,14 +194,14 @@ export async function generateText(req: Request, res: Response) {
       // Check for boundary (non-word modes)
       if (boundaryRegex) {
         const cutoff = findBoundaryCutoff(
-          accumulated,
+          prepared,
           sentIndex,
           boundaryRegex,
         );
         if (cutoff !== null) {
           console.log("[OpenRouter] Hit boundary match at index:", cutoff);
 
-          let toSend = accumulated.slice(sentIndex, cutoff);
+          let toSend = prepared.slice(sentIndex, cutoff);
 
           // Normalize join across seam
           toSend = normalizeJoin(joinState, toSend);
@@ -213,7 +225,7 @@ export async function generateText(req: Request, res: Response) {
       }
 
       // No boundary yet; stream what we have since last send
-      let segment = accumulated.slice(sentIndex);
+      let segment = prepared.slice(sentIndex);
       if (segment) {
         // Avoid emitting purely leading whitespace when nothing has been emitted at all and no non-whitespace yet
         if (!joinState.hasEmittedAny && !NON_WHITESPACE_RE.test(segment)) {
@@ -231,7 +243,7 @@ export async function generateText(req: Request, res: Response) {
           if (NON_WHITESPACE_RE.test(segment)) hasEmittedNonWhitespace = true;
           joinState.endedWithNewline = ENDING_NEWLINE_RE.test(segment);
           joinState.endedWithWhitespace = ENDING_WHITESPACE_RE.test(segment);
-          sentIndex = accumulated.length;
+          sentIndex = prepared.length;
         }
       }
     }
@@ -239,7 +251,7 @@ export async function generateText(req: Request, res: Response) {
     // Upstream finished without hitting our boundary; flush remaining buffer (if any) then close out
     if (!ended) {
       console.log("[OpenRouter] Stream finished naturally");
-      const remaining = accumulated.slice(sentIndex);
+      const remaining = prepareGeneratedText(prompt, accumulated).slice(sentIndex);
       if (remaining) {
         const segment = normalizeJoin(joinState, remaining);
         if (segment) {

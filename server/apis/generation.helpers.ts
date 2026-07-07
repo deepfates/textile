@@ -3,6 +3,7 @@ import {
   LEADING_SPACES_TABS_RE,
   ENDING_NEWLINE_RE,
   ENDING_WHITESPACE_RE,
+  NON_WHITESPACE_RE,
 } from "../../shared/textSeams";
 import type { LengthMode } from "../../shared/lengthPresets";
 
@@ -123,4 +124,61 @@ export function updateJoinState(state: JoinState, emitted: string): JoinState {
     endedWithNewline: ENDING_NEWLINE_RE.test(emitted),
     endedWithWhitespace: ENDING_WHITESPACE_RE.test(emitted),
   };
+}
+
+const CHAT_PREAMBLE_PATTERNS = [
+  /^(?:of course|sure|certainly|absolutely)[.!]?\s+(?:here(?:'s| is)\s+)?(?:the\s+)?(?:story\s+)?(?:continued|continuation|next\s+part|next\s+scene)(?:\s+of\s+the\s+story)?[:.!-]*\s*/i,
+  /^here(?:'s| is)\s+(?:the\s+)?(?:story\s+)?(?:continued|continuation|next\s+part|next\s+scene)(?:\s+of\s+the\s+story)?[:.!-]*\s*/i,
+  /^continuing\s+(?:the\s+)?story[:.!-]*\s*/i,
+];
+
+const CHAT_PREAMBLE_PREFIXES = [
+  "of course. here is the story continued",
+  "of course. here is the continuation",
+  "of course, here is the story continued",
+  "sure. here is the story continued",
+  "certainly. here is the story continued",
+  "absolutely. here is the story continued",
+  "here is the story continued",
+  "here's the story continued",
+  "continuing the story",
+];
+
+export function shouldDeferPossiblePreamble(raw: string): boolean {
+  const trimmed = raw.trimStart().toLowerCase();
+  if (!trimmed || trimmed.length > 96) return false;
+  return CHAT_PREAMBLE_PREFIXES.some((prefix) => prefix.startsWith(trimmed));
+}
+
+export function stripChatPreamble(text: string): string {
+  let output = text.replace(/^\uFEFF/, "").replace(/^[ \t\r\n]+/, "");
+  for (const pattern of CHAT_PREAMBLE_PATTERNS) {
+    const next = output.replace(pattern, "");
+    if (next !== output) {
+      output = next.replace(/^[ \t\r\n]+/, "");
+      break;
+    }
+  }
+  return output;
+}
+
+export function stripMarkdownEmphasis(text: string): string {
+  return text
+    .replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, "$1")
+    .replace(/__([^_\n][\s\S]*?[^_\n])__/g, "$1")
+    .replace(/(^|[\s([{])\*([^*\n][^*\n]*?[^*\n])\*(?=$|[\s.,;:!?)}\]])/g, "$1$2")
+    .replace(/(^|[\s([{])_([^_\n][^_\n]*?[^_\n])_(?=$|[\s.,;:!?)}\]])/g, "$1$2");
+}
+
+export function prepareGeneratedText(prompt: string, raw: string): string {
+  let output = stripMarkdownEmphasis(stripChatPreamble(raw));
+  if (!output) return output;
+
+  const promptEndsTight = NON_WHITESPACE_RE.test(prompt.at(-1) ?? "");
+  const outputStartsTight = /^[\p{L}\p{N}"'“‘(]/u.test(output);
+  if (promptEndsTight && outputStartsTight) {
+    output = ` ${output}`;
+  }
+
+  return output;
 }

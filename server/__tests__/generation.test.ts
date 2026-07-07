@@ -1,5 +1,13 @@
 import { describe, it, expect } from "bun:test";
-import { getBoundaryRegex, findBoundaryCutoff, normalizeJoin } from "../apis/generation.helpers.ts";
+import {
+  findBoundaryCutoff,
+  getBoundaryRegex,
+  normalizeJoin,
+  prepareGeneratedText,
+  shouldDeferPossiblePreamble,
+  stripChatPreamble,
+  stripMarkdownEmphasis,
+} from "../apis/generation.helpers.ts";
 
 
 
@@ -208,5 +216,31 @@ describe("normalizeJoin (seam whitespace normalization)", () => {
     const next = "world";
     const out = normalizeJoin(prev, next);
     expect(out).toBe("world");
+  });
+});
+
+describe("generation cleanup", () => {
+  it("strips chat-model continuation preambles", () => {
+    expect(
+      stripChatPreamble("Of course. Here is the story continued: the door opened."),
+    ).toBe("the door opened.");
+    expect(stripChatPreamble("Continuing the story: rain filled the street."))
+      .toBe("rain filled the street.");
+  });
+
+  it("defers partial preambles while streaming", () => {
+    expect(shouldDeferPossiblePreamble("Of cour")).toBe(true);
+    expect(shouldDeferPossiblePreamble("Of course. Here is the story continued: rain"))
+      .toBe(false);
+  });
+
+  it("removes markdown emphasis markers from prose", () => {
+    expect(stripMarkdownEmphasis("The **red door** opened and *clicked*."))
+      .toBe("The red door opened and clicked.");
+  });
+
+  it("adds the missing story seam space when a continuation starts tight", () => {
+    expect(prepareGeneratedText("the day before.", "Of course. Here is the story continued:Morning came."))
+      .toBe(" Morning came.");
   });
 });
