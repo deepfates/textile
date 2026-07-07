@@ -18,7 +18,7 @@ import type { LengthMode } from "../../../shared/lengthPresets";
 
 export type Screen = null | "drawer" | "edit";
 
-interface MenuParams {
+export interface MenuParams {
   temperature: number;
   lengthMode: LengthMode;
   model: ModelId;
