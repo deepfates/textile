@@ -1,110 +1,116 @@
-# Felt Fixes Report
+# dee-zhps Report
 
-Branch: `felt-fixes`
+Branch: `fix/silent-generation-error`
 
-Commits:
-- `d188f0d fix: remember active story on reload`
-- `4d3313b fix: strip chat preambles from branches`
-- `3c4184d fix: bonk on blocked story navigation`
+Worktree: `/tmp/dee-zhps-fix`
 
-Required verification:
+## Fix
+
+- `server/apis/generation.ts` no longer treats `req.close` as a reason to send `data: [DONE]`.
+- The SSE response headers are flushed before upstream generation starts, so upstream failures are reported as SSE payloads.
+- Actual client disconnects are tracked from `res.close`; those abort upstream work without writing an error to a gone client.
+- Streaming catch handling now emits `data: {"error": ...}` before ending, and never sends `[DONE]` for upstream failures.
+- `client/interface/hooks/useTextGeneration.ts` already surfaces SSE `payload.error` into hook state; `client/interface/Interface.tsx` renders that state visibly in the navigation bar as `Error: ...`.
+
+## Main Reproduction
+
+Primary checkout stayed on `main`; the only local dirt there was the pre-existing untracked `pnpm-lock.yaml`.
+
+`PORT=4123` and `PORT=4124` could not be used in this session, so I used port `41999`.
+
+Commands:
+
+```sh
+cd /Users/deepfates/Hacking/github/deepfates/textile
+PORT=41999 OPENROUTER_API_KEY=bad-test-key bun run dev
+curl -s -N -X POST http://localhost:41999/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Once upon a time","model":"deepseek/deepseek-chat-v3.1","length":"sentence","temperature":1}'
+```
+
+Observed client output on `main`:
+
+```text
+data: [DONE]
+```
+
+Server log showed the hidden failure:
+
+```text
+Generation error: error: Request was aborted.
+```
+
+## Branch Reproduction
+
+Commands:
+
+```sh
+cd /tmp/dee-zhps-fix
+PORT=42000 OPENROUTER_API_KEY=bad-test-key bun run dev
+curl -s -N -X POST http://localhost:42000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Once upon a time","model":"deepseek/deepseek-chat-v3.1","length":"sentence","temperature":1}'
+```
+
+Observed client output on `fix/silent-generation-error`:
+
+```text
+data: {"error":"401 Missing Authentication header"}
+```
+
+No `[DONE]` marker was sent before or instead of the error.
+
+## Regression Test
+
+Added `server/__tests__/generation.test.ts` coverage that simulates the old race: request `close` fires, then upstream generation throws `Request was aborted.` The test asserts the only stream write is the SSE error payload and that `[DONE]` is absent.
+
+Focused command:
+
+```sh
+bun test server/__tests__/generation.test.ts
+```
+
+Result:
+
+```text
+24 pass
+0 fail
+50 expect() calls
+Ran 24 tests across 1 file.
+```
+
+Package-scoped command from `package.json`:
 
 ```sh
 bun test ./server ./client
 ```
 
-Note: in the managed sandbox, the first run could not bind the site-auth test's ephemeral port. The same command passed with normal local port binding enabled.
+Result:
 
-## dee-amne: Reload Amnesia
-
-Fix:
-- `loadStoriesFromIndex` now chooses the default story from existing story metadata (`lastActiveAt`, then `updatedAt`, then `createdAt`) instead of falling back to `orderedIds[0]` on cold boot.
-- Root edits stay inside the current loom as root revisions instead of forking into anonymous `Story N` looms.
-- Projection overlays the latest root revision text onto the seed root, so generated children remain reachable after reload.
-
-Before reproduce command:
-
-```sh
-git show main:client/interface/hooks/useStoryTree.ts | rg -n "orderedIds\\[0\\]|Story \\$\\{Object\\.keys\\(trees\\)\\.length \\+ 1\\}"
+```text
+73 pass
+0 fail
+131 expect() calls
+Ran 73 tests across 11 files.
 ```
 
-Before expected evidence:
-- `const firstKey = loaded.orderedIds[0];`
-- root edit path creates `Story ${Object.keys(trees).length + 1}`.
-
-After reproduce commands:
+Full raw command:
 
 ```sh
-git show felt-fixes:client/interface/hooks/useStoryTree.ts | rg -n "chooseInitialStoryKey|getDefaultStoryKey|parentId === null"
-git show felt-fixes:client/interface/lync/storyLoom.ts | rg -n "rootRevisions|appendTurn\\(null"
-bun test ./client/interface/hooks/__tests__/useStoryTree.test.ts ./client/interface/lync/__tests__/storyLoom.test.ts
+bun test
 ```
 
-After expected evidence:
-- `chooseInitialStoryKey` selects metadata recency before index order.
-- root revisions are appended to the same loom and projected without dropping children.
+Result:
 
-## dee-slop: Chat-Slop Branches
-
-Choice:
-- Prompt armor plus conservative preamble retry.
-- Evidence basis: the route was using raw completions against chat models, so prompt armor reduces bad output. Per coordinator ruling, generated preamble text is never stripped; a standalone branch-start preamble is treated as a failed generation and retried instead.
-
-Fix:
-- Adds direct-continuation instructions to the raw completion prompt.
-- Detects exact-ish standalone assistant preambles at the start of a generation and retries with the same completion parameters up to 2 times.
-- If preamble retries are exhausted, keeps and streams the model generation unmodified by preamble cleanup.
-- Removes common Markdown emphasis markers before rendering/storing generated branch text.
-- Inserts a missing seam space when prompt text ends tight and the cleaned continuation starts tight.
-- Detector precision cases from `VERDICT.md` do not trigger retry: `Of course. Here is the story continued: the narrator lied.`, `Here is the story continued: the inscription began on the wall.`, `Continuing the story: rain filled the street.`, and `Of course, here is the story continued in ink across the page.`.
-
-Before reproduce command:
-
-```sh
-git show main:server/apis/generation.ts | rg -n "openai\\.completions\\.create|prompt,"
+```text
+122 pass
+1 fail
+1 error
+247 expect() calls
+Ran 123 tests across 23 files.
 ```
 
-Before expected evidence:
-- raw `prompt` is sent directly to `openai.completions.create`.
-
-After reproduce commands:
-
-```sh
-git show felt-fixes:server/apis/generation.helpers.ts | rg -n "startsWithChatPreamble|stripMarkdownEmphasis|prepareGeneratedText"
-bun test ./server/__tests__/generation.test.ts
-```
-
-After expected evidence:
-- helper tests cover conservative preamble detection, partial-preamble deferral, the `VERDICT.md` false-positive cases, Markdown emphasis cleanup, and `day before.` + `Morning` seam spacing.
-
-## dee-bonk: Silent No-Op Nav
-
-Fix:
-- `handleStoryNavigation` now returns `false` for blocked story-surface actions.
-- The interface turns blocked arrow presses into a short directional screen shake plus border flash.
-- Reduced-motion users get the flash without the shake.
-
-Before reproduce command:
-
-```sh
-git show main:client/interface/hooks/useStoryTree.ts | rg -n "case \"ArrowDown\"|case \"ArrowLeft\"|case \"ArrowRight\"" -A18
-```
-
-Before expected evidence:
-- blocked arrow branches fall through without a return signal.
-
-After reproduce commands:
-
-```sh
-git show felt-fixes:client/interface/hooks/useStoryTree.ts | rg -n "Promise<boolean>|return false"
-git show felt-fixes:client/interface/Interface.tsx | rg -n "triggerBonk|nav-bonk"
-git show felt-fixes:client/styles/terminal.css | rg -n "nav-bonk"
-bun test ./server ./client
-```
-
-After expected evidence:
-- blocked arrow paths return `false`.
-- `triggerBonk` applies `nav-bonk-*` classes for visual feedback.
+Known remaining full-suite issue: `tests/e2e/lync-story.spec.ts` is loaded by `bun test` and fails with Playwright's `test() did not expect test() to be called here` error. I did not change that path.
 
 ## Filed Tickets
 

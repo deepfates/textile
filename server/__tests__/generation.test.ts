@@ -1,3 +1,4 @@
+import { EventEmitter } from "events";
 import { describe, it, expect } from "bun:test";
 import {
   findBoundaryCutoff,
@@ -8,6 +9,8 @@ import {
   startsWithChatPreamble,
   stripMarkdownEmphasis,
 } from "../apis/generation.helpers.ts";
+import { generateText } from "../apis/generation.ts";
+import { openai } from "../apis/openaiClient.ts";
 
 
 
@@ -272,5 +275,75 @@ describe("generation cleanup", () => {
         "Of course. Here is the story continued: the narrator lied.",
       ),
     ).toBe(" Of course. Here is the story continued: the narrator lied.");
+  });
+});
+
+describe("generateText upstream errors", () => {
+  it("sends an SSE error before any terminal marker when request close races upstream failure", async () => {
+    const originalCreate = openai.completions.create;
+    const originalConsoleError = console.error;
+    const req = new EventEmitter() as EventEmitter & {
+      body: Record<string, unknown>;
+    };
+    req.body = {
+      prompt: "Once upon a time",
+      model: "deepseek/deepseek-chat-v3.1",
+      length: "sentence",
+      temperature: 1,
+    };
+
+    const writes: string[] = [];
+    let ended = false;
+    let headersSent = false;
+    const res = new EventEmitter() as EventEmitter & {
+      headersSent: boolean;
+      writableEnded: boolean;
+      setHeader: (name: string, value: string) => void;
+      flushHeaders: () => void;
+      write: (chunk: string) => void;
+      end: () => void;
+      status: (code: number) => typeof res;
+      json: (body: unknown) => void;
+    };
+    Object.defineProperty(res, "headersSent", {
+      get: () => headersSent,
+    });
+    Object.defineProperty(res, "writableEnded", {
+      get: () => ended,
+    });
+    res.setHeader = () => {};
+    res.flushHeaders = () => {
+      headersSent = true;
+    };
+    res.write = (chunk: string) => {
+      if (!ended) writes.push(chunk);
+    };
+    res.end = () => {
+      ended = true;
+    };
+    res.status = () => res;
+    res.json = (body: unknown) => {
+      writes.push(JSON.stringify(body));
+      ended = true;
+    };
+
+    openai.completions.create = (async () => {
+      req.emit("close");
+      throw new Error("Request was aborted.");
+    }) as typeof openai.completions.create;
+    console.error = () => {};
+
+    try {
+      await generateText(req as never, res as never);
+    } finally {
+      openai.completions.create = originalCreate;
+      console.error = originalConsoleError;
+    }
+
+    expect(writes).toEqual([
+      `data: ${JSON.stringify({ error: "Request was aborted." })}\n\n`,
+    ]);
+    expect(writes.join("")).not.toContain("[DONE]");
+    expect(ended).toBe(true);
   });
 });

@@ -49,6 +49,9 @@ function normalizeJoin(prev: JoinState, segment: string): string {
 // Tests should import helpers directly from ./generation.helpers; no __test export
 
 export async function generateText(req: Request, res: Response) {
+  let ended = false;
+  let clientDisconnected = false;
+
   try {
     const parsed = validateGenerateRequestBody(req.body);
     if (!parsed.ok) {
@@ -103,9 +106,9 @@ export async function generateText(req: Request, res: Response) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
 
     // End helpers
-    let ended = false;
     let activeAbortController: AbortController | null = null;
     const endEarly = () => {
       if (!ended) {
@@ -114,10 +117,11 @@ export async function generateText(req: Request, res: Response) {
         ended = true;
       }
     };
-    req.on("close", () => {
-      if (!ended) {
+    res.on("close", () => {
+      if (!ended && !res.writableEnded) {
+        clientDisconnected = true;
+        ended = true;
         activeAbortController?.abort();
-        endEarly();
       }
     });
 
@@ -266,6 +270,8 @@ export async function generateText(req: Request, res: Response) {
       }
     }
   } catch (error: unknown) {
+    if (ended) return;
+
     console.error("Generation error:", error);
 
     const errorMessage =
@@ -276,9 +282,11 @@ export async function generateText(req: Request, res: Response) {
     // If headers haven't been sent, send error response
     if (!res.headersSent) {
       res.status(500).json({ error: errorMessage });
-    } else {
-      // If streaming has started, send error in stream format
+    } else if (!clientDisconnected && !res.writableEnded) {
+      // If streaming has started, send error in stream format before closing.
       res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
+      res.end();
+    } else {
       res.end();
     }
   }
