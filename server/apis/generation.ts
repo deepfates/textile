@@ -16,8 +16,6 @@ import {
   findBoundaryCutoff as helperFindBoundaryCutoff,
   normalizeJoin as helperNormalizeJoin,
   prepareGeneratedText,
-  shouldDeferPossiblePreamble,
-  startsWithChatPreamble,
 } from "./generation.helpers";
 import { validateGenerateRequestBody } from "./validators";
 
@@ -123,7 +121,9 @@ export async function generateText(req: Request, res: Response) {
       }
     });
 
-    const MAX_PREAMBLE_RETRIES = 2;
+    // Owner ruling 2026-07-06: NEVER discard generations invisibly. Chat-model slop
+    // is visible and we generate past it. Retries stay off (loop runs once).
+    const MAX_PREAMBLE_RETRIES = 0;
     for (let attempt = 0; attempt <= MAX_PREAMBLE_RETRIES && !ended; attempt++) {
       const abortController = new AbortController();
       activeAbortController = abortController;
@@ -147,7 +147,6 @@ export async function generateText(req: Request, res: Response) {
 
       // Track if we've seen any non-whitespace in word mode
       let wordModeBuffer = "";
-      let shouldRetry = false;
 
       for await (const chunk of stream) {
         // Log usage if present (often in final chunk)
@@ -165,21 +164,6 @@ export async function generateText(req: Request, res: Response) {
         if (!delta) continue;
 
         accumulated += delta;
-        if (!joinState.hasEmittedAny && !hasEmittedNonWhitespace) {
-          if (startsWithChatPreamble(accumulated)) {
-            if (attempt < MAX_PREAMBLE_RETRIES) {
-              console.log("[OpenRouter] Detected chat preamble, retrying", {
-                attempt: attempt + 1,
-              });
-              shouldRetry = true;
-              abortController.abort();
-              break;
-            }
-          } else if (shouldDeferPossiblePreamble(accumulated)) {
-            continue;
-          }
-        }
-
         const prepared = prepareGeneratedText(prompt, accumulated);
 
         // Special handling for word mode: emit complete tokens
@@ -265,7 +249,6 @@ export async function generateText(req: Request, res: Response) {
         }
       }
 
-      if (shouldRetry) continue;
 
       // Upstream finished without hitting our boundary; flush remaining buffer (if any) then close out
       if (!ended) {
