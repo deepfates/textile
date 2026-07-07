@@ -88,6 +88,13 @@ export async function createServer() {
           plugins: [tailwindcss()],
         },
       },
+      resolve: {
+        alias: {
+          "node:crypto": path.resolve(__dirname, "../client/shims/nodeCrypto.ts"),
+          "node:fs/promises": path.resolve(__dirname, "../client/shims/nodeFsPromises.ts"),
+          "node:path": path.resolve(__dirname, "../client/shims/nodePath.ts"),
+        },
+      },
       optimizeDeps: {
         include: ["eventemitter3"],
         exclude: ["@automerge/automerge"],

@@ -58,6 +58,13 @@ export default defineConfig({
   },
   base: "/",
   root: path.resolve(__dirname, "../"),
+  resolve: {
+    alias: {
+      "node:crypto": path.resolve(__dirname, "../client/shims/nodeCrypto.ts"),
+      "node:fs/promises": path.resolve(__dirname, "../client/shims/nodeFsPromises.ts"),
+      "node:path": path.resolve(__dirname, "../client/shims/nodePath.ts"),
+    },
+  },
   build: {
     outDir: "../dist/",
     rollupOptions: {

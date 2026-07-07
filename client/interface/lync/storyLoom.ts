@@ -1,5 +1,5 @@
-import { assertTextStoryTurn } from "../../../vendor/lync/packages/core/src/profiles/text-story";
-import type { Turn } from "../../../vendor/lync/packages/core/src/types";
+import { assertTextStoryTurn } from "@lync/core/profiles/text-story";
+import type { Turn } from "@lync/core";
 import type { StoryNode } from "../types";
 import type {
   StoryDraft,

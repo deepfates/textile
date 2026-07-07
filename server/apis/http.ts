@@ -11,6 +11,7 @@ import {
   updateModel,
   deleteModel,
 } from "../modelsStore";
+import { attachLyncLoreRoutes } from "../lyncLore";
 import { createRateLimitMiddleware, requireApiAuth, apiCors } from "./security";
 import { validateModelPayload } from "./validators";
 
@@ -25,6 +26,7 @@ export function setup_routes(app: Application) {
   app.use("/api", cookieParser());
   app.use("/api", nocache());
   app.use("/api", compression());
+  attachLyncLoreRoutes(app);
 
   app.get("/api/props", async (req, res) => {
     const top_level_state = await getMainProps(req);

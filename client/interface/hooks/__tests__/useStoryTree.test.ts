@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { loomRef } from "../../../../vendor/lync/packages/core/src/references";
-import { createTestLoomClient } from "../../../../vendor/lync/packages/client/src/testing";
-import { textStoryLoomMeta } from "../../../../vendor/lync/packages/core/src/profiles/text-story";
+import { loomRef, type LoomReference } from "@lync/core";
+import { createTestLoomClient } from "@lync/client/testing";
+import { textStoryLoomMeta } from "@lync/core/profiles/text-story";
 import {
   chooseInitialStoryKey,
   INITIAL_STORY,
@@ -15,6 +15,9 @@ import type {
 } from "../../lync/storyTypes";
 
 describe("loadReachableStoryEntries", () => {
+  type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
+  const testLoomRef = (loomId: string) => loomRef(loomId) as LoomOnlyReference;
+
   it("skips unreachable index entries while keeping reachable stories", async () => {
     let nextId = 0;
     const client = createTestLoomClient<
@@ -36,12 +39,12 @@ describe("loadReachableStoryEntries", () => {
     const loaded = await loadReachableStoryEntries(
       [
         {
-          ref: loomRef("memory:missing"),
+          ref: testLoomRef("memory:missing"),
           title: "Broken story",
           addedAt: 1,
         },
         {
-          ref: loomRef(info.id),
+          ref: testLoomRef(info.id),
           title: "Reachable listing",
           addedAt: 2,
         },

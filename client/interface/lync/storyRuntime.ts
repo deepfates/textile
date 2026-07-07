@@ -1,16 +1,22 @@
 import {
+  createIndexedDbEventStore,
+  createLoreLooms,
+  createMemoryEventStore,
   referenceFromUrl,
   referenceToUrl,
+  type LoomReference,
   type Looms,
   type TurnId,
-} from "../../../vendor/lync/packages/core/src/index";
+} from "@lync/core";
+import type { EventStore } from "@lync/core/lore/store";
 import {
   isTextStoryLoomMeta,
   textStoryLoomMeta,
-} from "../../../vendor/lync/packages/core/src/profiles/text-story";
-import { createBrowserLoomClient } from "../../../vendor/lync/packages/client/src/browser";
-import { upsertLoom } from "../../../vendor/lync/packages/index/src/entries";
-import type { LoomIndex } from "../../../vendor/lync/packages/index/src/types";
+} from "@lync/core/profiles/text-story";
+import { createLoomClient } from "@lync/client";
+import { upsertLoom } from "@lync/index/entries";
+import type { LoomIndex } from "@lync/index";
+import { createLoreLoomIndexes } from "./loreIndex";
 import type {
   StoryEntryMeta,
   StoryLoom,
@@ -21,12 +27,13 @@ import type {
 
 export type { StoryEntryMeta, StoryLoom, StoryLoomMeta } from "./storyTypes";
 export type StoryIndex = LoomIndex<StoryEntryMeta, { app: "textile" }>;
+type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
 export type StoryReferenceImport =
   | { kind: "index"; indexId: string }
   | { kind: "loom" | "turn" | "thread"; loomId: string; turnId?: TurnId };
 
 type StoryClient = ReturnType<
-  typeof createBrowserLoomClient<
+  typeof createLoomClient<
     StoryTurnPayload,
     StoryLoomMeta,
     StoryTurnMeta,
@@ -37,27 +44,42 @@ type StoryClient = ReturnType<
 
 let client: StoryClient | null = null;
 let indexPromise: Promise<StoryIndex> | null = null;
+let eventStore: EventStore | null = null;
+let serverLoreImportPromise: Promise<void> | null = null;
 
 const INDEX_STORAGE_KEY = "textile-lync-v1-index-id";
+const LORE_IMPORT_STORAGE_KEY = "textile-lync-v1-server-lore-imported";
 const STORAGE_NAMESPACE = "textile-lync-v1";
+const LORE_AUTHOR = { actor: "textile", via: "textile-browser" };
 
 function getStoryClient() {
-  client ??= createBrowserLoomClient<
-    StoryTurnPayload,
-    StoryLoomMeta,
-    StoryTurnMeta,
-    StoryEntryMeta,
-    { app: "textile" }
-  >({
-    browser:
+  client ??= (() => {
+    const store =
       typeof window === "undefined"
-        ? undefined
-        : {
-            indexedDb: { database: STORAGE_NAMESPACE, store: "documents" },
-            broadcastChannel: { channelName: STORAGE_NAMESPACE },
-            syncPath: "/lync",
-          },
-  });
+        ? createMemoryEventStore()
+        : createIndexedDbEventStore({
+            dbName: STORAGE_NAMESPACE,
+            indexedDB: window.indexedDB,
+          });
+    eventStore = store;
+    return createLoomClient<
+      StoryTurnPayload,
+      StoryLoomMeta,
+      StoryTurnMeta,
+      StoryEntryMeta,
+      { app: "textile" }
+    >({
+      looms: createLoreLooms<StoryTurnPayload, StoryLoomMeta, StoryTurnMeta>({
+        store,
+        author: LORE_AUTHOR,
+      }),
+      indexes: createLoreLoomIndexes<StoryEntryMeta, { app: "textile" }>({
+        store,
+        author: LORE_AUTHOR,
+      }),
+      close: async () => {},
+    });
+  })();
   return client;
 }
 
@@ -71,19 +93,24 @@ export function getStoryLooms(): Looms<
 
 export async function getStoryIndex(): Promise<StoryIndex> {
   indexPromise ??= (async () => {
+    await importServerLoreIfNeeded();
     const storedId =
       typeof window === "undefined"
         ? null
         : window.localStorage.getItem(INDEX_STORAGE_KEY);
     if (storedId) {
       const opened = await openIndexWithRetry(storedId).catch(() => null);
-      if (opened) return opened;
+      if (opened) {
+        if (!(await opened.entries()).length) await addImportedLoreLoomsToIndex(opened);
+        return opened;
+      }
       window.localStorage.removeItem(INDEX_STORAGE_KEY);
     }
     const index = await getStoryClient().indexes.create({ app: "textile" });
     if (typeof window !== "undefined") {
       window.localStorage.setItem(INDEX_STORAGE_KEY, index.id);
     }
+    await addImportedLoreLoomsToIndex(index);
     return index;
   })();
   return indexPromise;
@@ -91,14 +118,14 @@ export async function getStoryIndex(): Promise<StoryIndex> {
 
 export function createStoryIndexShareUrl(
   indexId: string,
-  location: Location = window.location,
+  location: Location | URL = window.location,
 ) {
   return referenceToUrl(getStoryClient().references.index(indexId), location);
 }
 
 export function createStoryShareUrl(
   loomId: string,
-  location: Location = window.location,
+  location: Location | URL = window.location,
 ) {
   return referenceToUrl(getStoryClient().references.loom(loomId), location);
 }
@@ -106,7 +133,7 @@ export function createStoryShareUrl(
 export function createStoryThreadShareUrl(
   loomId: string,
   turnId: string,
-  location: Location = window.location,
+  location: Location | URL = window.location,
 ) {
   return referenceToUrl(getStoryClient().references.thread(loomId, turnId), location);
 }
@@ -114,7 +141,7 @@ export function createStoryThreadShareUrl(
 export function createStoryFocusShareUrl(
   loomId: string,
   turnId: string | null,
-  location: Location = window.location,
+  location: Location | URL = window.location,
 ) {
   return turnId
     ? createStoryThreadShareUrl(loomId, turnId, location)
@@ -134,7 +161,7 @@ export function replaceStoryFocusUrl(
   }
 }
 
-export function getStoryReferenceFromLocation(location: Location = window.location) {
+export function getStoryReferenceFromLocation(location: Location | URL = window.location) {
   return referenceFromUrl(location);
 }
 
@@ -177,7 +204,7 @@ export async function addStoryLoomToIndex(
   loomId: string,
   meta: StoryEntryMeta,
 ): Promise<void> {
-  await upsertLoom(await getStoryIndex(), getStoryClient().references.loom(loomId), {
+  await upsertLoom(await getStoryIndex(), storyLoomRef(loomId), {
     title: meta.title,
     kind: "story",
     meta,
@@ -237,4 +264,51 @@ async function openReferenceWithRetry(ref: NonNullable<ReturnType<typeof referen
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function importServerLoreIfNeeded(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (window.localStorage.getItem(LORE_IMPORT_STORAGE_KEY) === "1") return;
+  serverLoreImportPromise ??= (async () => {
+    if (!eventStore) getStoryClient();
+    const store = eventStore;
+    if (!store) return;
+    const response = await fetch("/api/lync/lore", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    }).catch(() => null);
+    if (!response?.ok) return;
+    const payload = (await response.json()) as {
+      files?: { file?: unknown; text?: unknown }[];
+    };
+    for (const file of payload.files ?? []) {
+      if (typeof file.text !== "string") continue;
+      for (const line of file.text.split("\n")) {
+        if (line.trim()) await store.union(line);
+      }
+    }
+    window.localStorage.setItem(LORE_IMPORT_STORAGE_KEY, "1");
+  })();
+  return serverLoreImportPromise;
+}
+
+async function addImportedLoreLoomsToIndex(index: StoryIndex): Promise<void> {
+  const store = eventStore;
+  if (!store) return;
+  const roots = await store.roots("lync/loom");
+  for (const root of roots) {
+    const loomId = `lore:${root.body.id}`;
+    const loom = await getStoryClient().looms.open(loomId).catch(() => null);
+    const info = await loom?.info().catch(() => null);
+    if (!info || !isTextStoryLoomMeta(info.meta)) continue;
+    await upsertLoom(index, storyLoomRef(loomId), {
+      title: info.meta?.title ?? loomId,
+      kind: "story",
+      meta: { title: info.meta?.title ?? loomId },
+    });
+  }
+}
+
+function storyLoomRef(loomId: string): LoomOnlyReference {
+  return getStoryClient().references.loom(loomId) as LoomOnlyReference;
 }
