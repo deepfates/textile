@@ -193,6 +193,7 @@ export const GamepadInterface = () => {
     generatingInfo,
     isGeneratingAt,
     isAnyGenerating,
+    emptyGeneration,
     error,
     handleStoryNavigation,
     setCurrentLoomId,
@@ -1815,6 +1816,13 @@ export const GamepadInterface = () => {
                 return (
                   <span className="text-red-500 text-sm">
                     Error: {error.message}
+                  </span>
+                );
+              }
+              if (emptyGeneration) {
+                return (
+                  <span className="navbar-minibuffer" aria-live="polite">
+                    {emptyGeneration.message}
                   </span>
                 );
               }

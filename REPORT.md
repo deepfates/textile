@@ -11,6 +11,7 @@ Worktree: `/tmp/dee-zhps-fix`
 - Actual client disconnects are tracked from `res.close`; those abort upstream work without writing an error to a gone client.
 - Streaming catch handling now emits `data: {"error": ...}` before ending, and never sends `[DONE]` for upstream failures.
 - `client/interface/hooks/useTextGeneration.ts` already surfaces SSE `payload.error` into hook state; `client/interface/Interface.tsx` renders that state visibly in the navigation bar as `Error: ...`.
+- Bounce update: `client/interface/hooks/useStoryGeneration.ts` now tracks an empty-completion notice when generation completes with no content and no error. `useStoryTree` passes that notice through, and `client/interface/Interface.tsx` renders it in the navigation bar as `Model returned no text.` This is distinct from red error rendering and distinct from normal generated story output.
 
 ## Main Reproduction
 
@@ -64,6 +65,8 @@ No `[DONE]` marker was sent before or instead of the error.
 
 Added `server/__tests__/generation.test.ts` coverage that simulates the old race: request `close` fires, then upstream generation throws `Request was aborted.` The test asserts the only stream write is the SSE error payload and that `[DONE]` is absent.
 
+Bounce update: added `client/interface/hooks/__tests__/promptJoining.test.ts` coverage for the empty-completion classifier used by the hook, asserting empty completed output maps to the visible notice message and non-empty output does not.
+
 Focused command:
 
 ```sh
@@ -79,6 +82,61 @@ Result:
 Ran 24 tests across 1 file.
 ```
 
+Focused client command:
+
+```sh
+bun test ./client/interface/hooks/__tests__/promptJoining.test.ts
+```
+
+Result:
+
+```text
+15 pass
+0 fail
+20 expect() calls
+Ran 15 tests across 1 file.
+```
+
+Client package command:
+
+```sh
+bun test ./client
+```
+
+Result:
+
+```text
+29 pass
+0 fail
+47 expect() calls
+Ran 29 tests across 5 files.
+```
+
+Server package command:
+
+```sh
+bun test ./server
+```
+
+Result:
+
+```text
+45 pass
+1 fail
+78 expect() calls
+Ran 46 tests across 6 files.
+```
+
+Failure:
+
+```text
+server/__tests__/siteAuth.test.ts:
+error: Failed to start server. Is port 0 in use?
+(fail) site auth > serves login styles without Tailwind source directives
+```
+
+The same failure repeated on a second `bun test ./server` run. I did not change `server/__tests__/siteAuth.test.ts`; the brief already noted the server/full-suite failure as pre-existing triage (`dee-js7e`), so I did not file a duplicate ticket.
+
 Package-scoped command from `package.json`:
 
 ```sh
@@ -88,29 +146,27 @@ bun test ./server ./client
 Result:
 
 ```text
-73 pass
-0 fail
-131 expect() calls
-Ran 73 tests across 11 files.
+74 pass
+1 fail
+125 expect() calls
+Ran 75 tests across 11 files.
 ```
 
-Full raw command:
-
-```sh
-bun test
-```
-
-Result:
+Failure:
 
 ```text
-122 pass
-1 fail
-1 error
-247 expect() calls
-Ran 123 tests across 23 files.
+server/__tests__/siteAuth.test.ts:
+error: Failed to start server. Is port 0 in use?
+(fail) site auth > serves login styles without Tailwind source directives
 ```
 
-Known remaining full-suite issue: `tests/e2e/lync-story.spec.ts` is loaded by `bun test` and fails with Playwright's `test() did not expect test() to be called here` error. I did not change that path.
+Diff hygiene:
+
+```sh
+git diff --check
+```
+
+Result: no output, exit 0.
 
 ## Filed Tickets
 

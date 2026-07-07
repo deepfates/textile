@@ -149,7 +149,7 @@ export function useStoryTree(params: StoryParams) {
   const [generatingInfo, setGeneratingInfo] = useState<GeneratingInfo>({});
   const autoModeIterationsRef = useRef(params.autoModeIterations);
 
-  const { generateContinuation, chooseContinuation, error } =
+  const { generateContinuation, chooseContinuation, emptyGeneration, error } =
     useStoryGeneration();
 
   const refreshTreeFromLoom = useCallback(
@@ -851,6 +851,7 @@ export function useStoryTree(params: StoryParams) {
     generatingInfo,
     isGeneratingAt,
     isAnyGenerating,
+    emptyGeneration,
     error,
     handleStoryNavigation,
     trees,
