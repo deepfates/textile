@@ -47,14 +47,16 @@ After expected evidence:
 ## dee-slop: Chat-Slop Branches
 
 Choice:
-- Both prompt armor and streamed cleanup.
-- Evidence basis: the route was using raw completions against chat models, so prompt armor reduces bad output, while streamed cleanup deterministically strips preambles that still arrive.
+- Prompt armor plus conservative preamble retry.
+- Evidence basis: the route was using raw completions against chat models, so prompt armor reduces bad output. Per coordinator ruling, generated preamble text is never stripped; a standalone branch-start preamble is treated as a failed generation and retried instead.
 
 Fix:
 - Adds direct-continuation instructions to the raw completion prompt.
-- Strips common assistant preambles such as `Of course. Here is the story continued...`.
+- Detects exact-ish standalone assistant preambles at the start of a generation and retries with the same completion parameters up to 2 times.
+- If preamble retries are exhausted, keeps and streams the model generation unmodified by preamble cleanup.
 - Removes common Markdown emphasis markers before rendering/storing generated branch text.
 - Inserts a missing seam space when prompt text ends tight and the cleaned continuation starts tight.
+- Detector precision cases from `VERDICT.md` do not trigger retry: `Of course. Here is the story continued: the narrator lied.`, `Here is the story continued: the inscription began on the wall.`, `Continuing the story: rain filled the street.`, and `Of course, here is the story continued in ink across the page.`.
 
 Before reproduce command:
 
@@ -68,12 +70,12 @@ Before expected evidence:
 After reproduce commands:
 
 ```sh
-git show felt-fixes:server/apis/generation.helpers.ts | rg -n "stripChatPreamble|stripMarkdownEmphasis|prepareGeneratedText"
+git show felt-fixes:server/apis/generation.helpers.ts | rg -n "startsWithChatPreamble|stripMarkdownEmphasis|prepareGeneratedText"
 bun test ./server/__tests__/generation.test.ts
 ```
 
 After expected evidence:
-- helper tests cover preamble stripping, partial-preamble deferral, Markdown emphasis cleanup, and `day before.` + `Morning` seam spacing.
+- helper tests cover conservative preamble detection, partial-preamble deferral, the `VERDICT.md` false-positive cases, Markdown emphasis cleanup, and `day before.` + `Morning` seam spacing.
 
 ## dee-bonk: Silent No-Op Nav
 

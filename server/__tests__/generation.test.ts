@@ -5,7 +5,7 @@ import {
   normalizeJoin,
   prepareGeneratedText,
   shouldDeferPossiblePreamble,
-  stripChatPreamble,
+  startsWithChatPreamble,
   stripMarkdownEmphasis,
 } from "../apis/generation.helpers.ts";
 
@@ -220,12 +220,33 @@ describe("normalizeJoin (seam whitespace normalization)", () => {
 });
 
 describe("generation cleanup", () => {
-  it("strips chat-model continuation preambles", () => {
+  it("detects standalone chat-model continuation preambles for retry", () => {
+    expect(startsWithChatPreamble("Of course. Here is the story continued:"))
+      .toBe(true);
+    expect(startsWithChatPreamble("Continuing the story:"))
+      .toBe(true);
+    expect(startsWithChatPreamble("\nSure. Here is the next scene. "))
+      .toBe(true);
+  });
+
+  it("does not detect plausible prose openings as retryable preambles", () => {
     expect(
-      stripChatPreamble("Of course. Here is the story continued: the door opened."),
-    ).toBe("the door opened.");
-    expect(stripChatPreamble("Continuing the story: rain filled the street."))
-      .toBe("rain filled the street.");
+      startsWithChatPreamble(
+        "Of course. Here is the story continued: the narrator lied.",
+      ),
+    ).toBe(false);
+    expect(
+      startsWithChatPreamble(
+        "Here is the story continued: the inscription began on the wall.",
+      ),
+    ).toBe(false);
+    expect(startsWithChatPreamble("Continuing the story: rain filled the street."))
+      .toBe(false);
+    expect(
+      startsWithChatPreamble(
+        "Of course, here is the story continued in ink across the page.",
+      ),
+    ).toBe(false);
   });
 
   it("defers partial preambles while streaming", () => {
@@ -240,7 +261,16 @@ describe("generation cleanup", () => {
   });
 
   it("adds the missing story seam space when a continuation starts tight", () => {
-    expect(prepareGeneratedText("the day before.", "Of course. Here is the story continued:Morning came."))
+    expect(prepareGeneratedText("the day before.", "Morning came."))
       .toBe(" Morning came.");
+  });
+
+  it("does not strip preamble-like text during cleanup", () => {
+    expect(
+      prepareGeneratedText(
+        "the day before.",
+        "Of course. Here is the story continued: the narrator lied.",
+      ),
+    ).toBe(" Of course. Here is the story continued: the narrator lied.");
   });
 });

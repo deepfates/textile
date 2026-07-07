@@ -126,12 +126,6 @@ export function updateJoinState(state: JoinState, emitted: string): JoinState {
   };
 }
 
-const CHAT_PREAMBLE_PATTERNS = [
-  /^(?:of course|sure|certainly|absolutely)[.!]?\s+(?:here(?:'s| is)\s+)?(?:the\s+)?(?:story\s+)?(?:continued|continuation|next\s+part|next\s+scene)(?:\s+of\s+the\s+story)?[:.!-]*\s*/i,
-  /^here(?:'s| is)\s+(?:the\s+)?(?:story\s+)?(?:continued|continuation|next\s+part|next\s+scene)(?:\s+of\s+the\s+story)?[:.!-]*\s*/i,
-  /^continuing\s+(?:the\s+)?story[:.!-]*\s*/i,
-];
-
 const CHAT_PREAMBLE_PREFIXES = [
   "of course. here is the story continued",
   "of course. here is the continuation",
@@ -150,16 +144,18 @@ export function shouldDeferPossiblePreamble(raw: string): boolean {
   return CHAT_PREAMBLE_PREFIXES.some((prefix) => prefix.startsWith(trimmed));
 }
 
-export function stripChatPreamble(text: string): string {
-  let output = text.replace(/^\uFEFF/, "").replace(/^[ \t\r\n]+/, "");
-  for (const pattern of CHAT_PREAMBLE_PATTERNS) {
-    const next = output.replace(pattern, "");
-    if (next !== output) {
-      output = next.replace(/^[ \t\r\n]+/, "");
-      break;
-    }
-  }
-  return output;
+const CHAT_PREAMBLE_DETECT_RE =
+  /^(?:\uFEFF)?[ \t\r\n]*(?:(?:of course|sure|certainly|absolutely)[.,!]?\s+)?(?:here(?:'s| is)\s+)?(?:the\s+)?(?:story\s+)?(?:continued|continuation|next\s+part|next\s+scene)(?:\s+of\s+the\s+story)?\s*[:.!-]\s*$/i;
+
+const CONTINUING_STORY_DETECT_RE =
+  /^(?:\uFEFF)?[ \t\r\n]*continuing\s+(?:the\s+)?story\s*[:.!-]\s*$/i;
+
+export function startsWithChatPreamble(raw: string): boolean {
+  if (!raw || raw.length > 160) return false;
+  return (
+    CHAT_PREAMBLE_DETECT_RE.test(raw) ||
+    CONTINUING_STORY_DETECT_RE.test(raw)
+  );
 }
 
 export function stripMarkdownEmphasis(text: string): string {
@@ -171,7 +167,7 @@ export function stripMarkdownEmphasis(text: string): string {
 }
 
 export function prepareGeneratedText(prompt: string, raw: string): string {
-  let output = stripMarkdownEmphasis(stripChatPreamble(raw));
+  let output = stripMarkdownEmphasis(raw);
   if (!output) return output;
 
   const promptEndsTight = NON_WHITESPACE_RE.test(prompt.at(-1) ?? "");
