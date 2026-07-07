@@ -1,14 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { StoryNode, InFlight, GeneratingInfo } from "../types";
 import { useStoryGeneration } from "./useStoryGeneration";
 import type { ModelId } from "../../../shared/models";
 import type { LengthMode } from "../../../shared/lengthPresets";
-import {
-  getDefaultStoryKey,
-  getStoryMeta,
-  type StoryMetaMap,
-  touchStoryUpdated,
-} from "../utils/storyMeta";
+import { touchStoryUpdated } from "../utils/storyMeta";
 import {
   getPreferredChildIndex,
   setPreferredChildIndex,
@@ -20,15 +15,23 @@ import {
 } from "../lync/storyLoom";
 import {
   createStoryLoom,
-  getStoryIndex,
-  importStoryReferenceFromUrl,
-  listStoryEntries,
-  openStoryLoom,
   removeStory,
   type StoryLoom,
-  type StoryReferenceImport,
 } from "../lync/storyRuntime";
 import type { StoryDraft } from "../lync/storyTypes";
+import {
+  chooseInitialStoryKey,
+  loadReachableStoryEntries,
+  useStoryCatalog,
+  type LoadedStoryEntries,
+} from "./useStoryCatalog";
+import { useAutoStoryMode } from "../modes/useAutoStoryMode";
+
+export {
+  chooseInitialStoryKey,
+  loadReachableStoryEntries,
+  type LoadedStoryEntries,
+};
 
 export const INITIAL_STORY = {
   root: {
@@ -41,9 +44,6 @@ export const INITIAL_STORY = {
 const DEFAULT_TREES = {
   "Story 1": INITIAL_STORY,
 };
-
-const AUTO_MODE_INFINITY_VALUE = 4;
-const MAX_AUTO_MODE_ITERATIONS = 25;
 
 const findPathById = (
   root: StoryNode,
@@ -70,67 +70,12 @@ const threadToSelectionIndices = (path: StoryNode[]): number[] => {
   return indices;
 };
 
-interface StoryParams {
+export interface StoryParams {
   temperature: number;
   lengthMode: LengthMode;
   model: ModelId;
   textSplitting: boolean;
   autoModeIterations: number;
-}
-
-type StoryIndexEntry = Awaited<ReturnType<typeof listStoryEntries>>[number];
-
-export interface LoadedStoryEntries {
-  loomsById: Record<string, StoryLoom>;
-  trees: Record<string, { root: StoryNode }>;
-  titles: Record<string, string>;
-  orderedIds: string[];
-  skippedIds: string[];
-}
-
-export function chooseInitialStoryKey(
-  loaded: Pick<LoadedStoryEntries, "trees" | "orderedIds">,
-  previousKey?: string | null,
-  focusedKey?: string | null,
-  metaMap: StoryMetaMap = getStoryMeta(),
-): string | null {
-  if (focusedKey && loaded.trees[focusedKey]) return focusedKey;
-  if (previousKey && loaded.trees[previousKey]) return previousKey;
-  const defaultKey = getDefaultStoryKey(loaded.trees, metaMap);
-  return defaultKey ?? loaded.orderedIds[0] ?? null;
-}
-
-export async function loadReachableStoryEntries(
-  entries: StoryIndexEntry[],
-  openLoom: (loomId: string) => Promise<StoryLoom>,
-  fallbackRootText: string,
-  onSkip: (loomId: string, error: unknown) => void = (loomId, error) => {
-    console.warn(`Skipping unreachable story loom ${loomId}:`, error);
-  },
-): Promise<LoadedStoryEntries> {
-  const trees: Record<string, { root: StoryNode }> = {};
-  const loomsById: Record<string, StoryLoom> = {};
-  const titles: Record<string, string> = {};
-  const orderedIds: string[] = [];
-  const skippedIds: string[] = [];
-
-  for (const entry of entries) {
-    const loomId = entry.ref.loomId;
-    try {
-      const loom = await openLoom(loomId);
-      const info = await loom.info();
-      loomsById[loomId] = loom;
-      titles[loomId] =
-        entry.title ?? entry.meta?.title ?? info.meta?.title ?? loomId;
-      trees[loomId] = await projectStoryTree(loom, fallbackRootText);
-      orderedIds.push(loomId);
-    } catch (error) {
-      skippedIds.push(loomId);
-      onSkip(loomId, error);
-    }
-  }
-
-  return { loomsById, trees, titles, orderedIds, skippedIds };
 }
 
 export function useStoryTree(params: StoryParams) {
@@ -147,7 +92,6 @@ export function useStoryTree(params: StoryParams) {
   const [selectedOptions, setSelectedOptions] = useState<number[]>([0]);
   const [inFlight, setInFlight] = useState<InFlight>(new Set());
   const [generatingInfo, setGeneratingInfo] = useState<GeneratingInfo>({});
-  const autoModeIterationsRef = useRef(params.autoModeIterations);
 
   const { generateContinuation, chooseContinuation, emptyGeneration, error } =
     useStoryGeneration();
@@ -165,101 +109,18 @@ export function useStoryTree(params: StoryParams) {
     [currentLoomId],
   );
 
-  const loadStoriesFromIndex = useCallback(async (focus?: StoryReferenceImport | null) => {
-    const entries = await listStoryEntries();
-
-    if (!entries.length) {
-      const { info, loom } = await createStoryLoom(
-        "Story 1",
-        INITIAL_STORY.root.text,
-      );
-      const tree = await projectStoryTree(loom, INITIAL_STORY.root.text);
-      setLoomsById({ [info.id]: loom });
-      setTrees({ [info.id]: tree });
-      setStoryTitles({ [info.id]: info.meta?.title ?? "Story 1" });
-      setCurrentLoomId(info.id);
-      setStoryTree(tree);
-      return;
-    }
-
-    const loaded = await loadReachableStoryEntries(
-      entries,
-      openStoryLoom,
-      INITIAL_STORY.root.text,
-    );
-
-    if (!loaded.orderedIds.length) {
-      const { info, loom } = await createStoryLoom(
-        "Story 1",
-        INITIAL_STORY.root.text,
-      );
-      const tree = await projectStoryTree(loom, INITIAL_STORY.root.text);
-      setLoomsById({ [info.id]: loom });
-      setTrees({ [info.id]: tree });
-      setStoryTitles({ [info.id]: info.meta?.title ?? "Story 1" });
-      setCurrentLoomId(info.id);
-      setStoryTree(tree);
-      setCurrentDepth(0);
-      setSelectedOptions([0]);
-      return;
-    }
-
-    setLoomsById(loaded.loomsById);
-    setTrees(loaded.trees);
-    setStoryTitles(loaded.titles);
-    setCurrentLoomId((prev) => {
-      const focusedKey = focus?.kind !== "index" ? focus?.loomId : null;
-      const nextKey = chooseInitialStoryKey(loaded, prev, focusedKey)
-        ?? loaded.orderedIds[0];
-      const nextTree = loaded.trees[nextKey] ?? INITIAL_STORY;
-      setStoryTree(nextTree);
-      let appliedFocus = false;
-      if (focus?.kind !== "index" && focus?.turnId && loaded.trees[nextKey]) {
-        const path = findPathById(nextTree.root, focus.turnId);
-        if (path) {
-          const indices = threadToSelectionIndices(path);
-          setCurrentDepth(Math.max(0, path.length - 1));
-          setSelectedOptions(indices.length ? indices : [0]);
-          appliedFocus = true;
-        }
-      }
-      if (!appliedFocus && nextKey !== prev) {
-        setCurrentDepth(0);
-        setSelectedOptions([0]);
-      }
-      return nextKey;
-    });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const imported = await importStoryReferenceFromUrl().catch((error) => {
-        console.warn("Failed to import shared story reference from URL:", error);
-        return null;
-      });
-      if (!cancelled) await loadStoriesFromIndex(imported);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadStoriesFromIndex]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-    void (async () => {
-      const index = await getStoryIndex();
-      if (cancelled) return;
-      unsubscribe = index.subscribe(() => {
-        void loadStoriesFromIndex();
-      });
-    })();
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, [loadStoriesFromIndex]);
+  useStoryCatalog({
+    setLoomsById,
+    setTrees,
+    setStoryTitles,
+    setCurrentLoomId,
+    setStoryTree,
+    setCurrentDepth,
+    setSelectedOptions,
+    fallbackTree: INITIAL_STORY,
+    findPathById,
+    threadToSelectionIndices,
+  });
 
   useEffect(() => {
     const unsubs = Object.entries(loomsById).map(([key, loom]) =>
@@ -286,10 +147,6 @@ export function useStoryTree(params: StoryParams) {
   useEffect(() => {
     setStoryTree(trees[currentLoomId] || INITIAL_STORY);
   }, [trees, currentLoomId]);
-
-  useEffect(() => {
-    autoModeIterationsRef.current = params.autoModeIterations;
-  }, [params.autoModeIterations]);
 
   // Helper to get the last selected index for a node
   const getLastSelectedIndex = useCallback(
@@ -388,229 +245,16 @@ export function useStoryTree(params: StoryParams) {
     [getCurrentPath, currentDepth, params, generateContinuation],
   );
 
-  const autoExpandChildren = useCallback(
-    async (
-      loom: StoryLoom,
-      baseTree: { root: StoryNode },
-      parentPath: StoryNode[],
-      generatedChildCount: number,
-      depth: number,
-      params: StoryParams,
-    ) => {
-      if (params.autoModeIterations <= 0) {
-        return baseTree;
-      }
-
-      if (generatedChildCount <= 0) {
-        return baseTree;
-      }
-
-      const resolvePath = (
-        tree: { root: StoryNode },
-        ids: string[],
-      ): StoryNode[] | null => {
-        if (!ids.length) return null;
-        const path: StoryNode[] = [];
-        let current: StoryNode | undefined = tree.root;
-        if (!current) return null;
-        path.push(current);
-        if (ids[0] !== current.id) {
-          return null;
-        }
-        for (let i = 1; i < ids.length; i++) {
-          const nextId = ids[i];
-          if (!current?.continuations) return null;
-          const nextNode = current.continuations.find(
-            (node) => node.id === nextId,
-          );
-          if (!nextNode) return null;
-          current = nextNode;
-          path.push(current);
-        }
-        return path;
-      };
-
-      const isInfiniteMode =
-        params.autoModeIterations >= AUTO_MODE_INFINITY_VALUE;
-      let iterationsRemaining = isInfiniteMode
-        ? MAX_AUTO_MODE_ITERATIONS
-        : params.autoModeIterations;
-      let workingTree = baseTree;
-      let currentDepth = depth;
-      let currentPathIds = parentPath.map((node) => node.id);
-      let currentChildIds: string[] = [];
-
-      while (iterationsRemaining > 0) {
-        if (
-          isInfiniteMode &&
-          autoModeIterationsRef.current < AUTO_MODE_INFINITY_VALUE
-        ) {
-          break;
-        }
-        const pathNodes = resolvePath(workingTree, currentPathIds);
-        if (!pathNodes) break;
-
-        const parentNode = pathNodes[pathNodes.length - 1];
-        if (!parentNode?.continuations?.length) break;
-
-        if (!currentChildIds.length) {
-          currentChildIds = parentNode.continuations
-            .slice(-generatedChildCount)
-            .map((node) => node.id);
-        }
-
-        const candidateNodes = currentChildIds
-          .map((id) =>
-            parentNode.continuations?.find((node) => node.id === id) ?? null,
-          )
-          .filter((node): node is StoryNode => Boolean(node));
-
-        if (!candidateNodes.length) {
-          break;
-        }
-
-        const choiceIndex = await chooseContinuation(
-          pathNodes,
-          candidateNodes,
-          params,
-        );
-
-        if (
-          choiceIndex === null ||
-          choiceIndex < 0 ||
-          choiceIndex >= candidateNodes.length
-        ) {
-          break;
-        }
-
-        const selectedNode = candidateNodes[choiceIndex];
-        if (!selectedNode) break;
-
-        const selectedSiblingIndex =
-          parentNode.continuations?.findIndex(
-            (node) => node.id === selectedNode.id,
-          ) ?? choiceIndex;
-        setPreferredChildIndex(
-          currentLoomId,
-          parentNode.id,
-          selectedSiblingIndex < 0 ? choiceIndex : selectedSiblingIndex,
-        );
-
-        // Align the user's explicit selection state with the model's choice so
-        // subsequent navigation (e.g. pressing ArrowDown) follows the
-        // auto-expanded branch instead of staying on the previously selected
-        // sibling.
-        setSelectedOptions((prev) => {
-          const next = [...prev];
-          if (next.length <= currentDepth) {
-            const fillCount = currentDepth - next.length + 1;
-            next.push(...Array(fillCount).fill(0));
-          }
-          next[currentDepth] =
-            selectedSiblingIndex < 0 ? choiceIndex : selectedSiblingIndex;
-          return next.slice(0, currentDepth + 1);
-        });
-
-        const selectedPathIds = [...currentPathIds, selectedNode.id];
-        const selectedPath = resolvePath(workingTree, selectedPathIds);
-        if (!selectedPath) break;
-
-        const extendPathToLeaf = (path: StoryNode[]): StoryNode[] => {
-          const extended = [...path];
-          let current = extended[extended.length - 1];
-          const seen = new Set<string>(extended.map((node) => node.id));
-          while (
-            current?.continuations &&
-            current.continuations.length === 1
-          ) {
-            const next = current.continuations[0];
-            if (!next || seen.has(next.id)) break;
-            extended.push(next);
-            seen.add(next.id);
-            current = next;
-          }
-          return extended;
-        };
-
-        const leafPath = extendPathToLeaf(selectedPath);
-        const targetNode = leafPath[leafPath.length - 1];
-        if (!targetNode) break;
-
-        if (targetNode.continuations?.length) {
-          break;
-        }
-
-        const targetDepth = leafPath.length - 1;
-
-        setInFlight((prev) => new Set(prev).add(targetNode.id));
-        setGeneratingInfo((prev) => ({
-          ...prev,
-          [targetNode.id]: {
-            depth: targetDepth,
-            index: null,
-          },
-        }));
-
-        let autoChildren: StoryDraft[] = [];
-        try {
-          autoChildren = await Promise.all(
-            Array(3)
-              .fill(null)
-              .map(() =>
-                generateContinuation(leafPath, targetDepth, params),
-              ),
-          );
-        } catch (err) {
-          console.error("Auto-mode generation failed:", err);
-          break;
-        } finally {
-          setInFlight((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(targetNode.id);
-            return newSet;
-          });
-          setGeneratingInfo((prev) => {
-            const newInfo = { ...prev };
-            delete newInfo[targetNode.id];
-            return newInfo;
-          });
-        }
-
-        await appendStoryDrafts(
-          loom,
-          targetNode.id,
-          autoChildren,
-        );
-        workingTree = await refreshTreeFromLoom(currentLoomId, loom);
-
-        const refreshedTargetPath = resolvePath(
-          workingTree,
-          leafPath.map((node) => node.id),
-        );
-        const refreshedTarget =
-          refreshedTargetPath?.[refreshedTargetPath.length - 1];
-        if (!refreshedTarget?.continuations?.length) break;
-
-        currentPathIds = leafPath.map((node) => node.id);
-        currentChildIds = refreshedTarget.continuations
-          .slice(-autoChildren.length)
-          .map((child) => child.id);
-        currentDepth = targetDepth;
-        iterationsRemaining -= 1;
-      }
-
-      return workingTree;
-    },
-    [
-      chooseContinuation,
-      generateContinuation,
-      setSelectedOptions,
-      setInFlight,
-      setGeneratingInfo,
-      currentLoomId,
-      refreshTreeFromLoom,
-    ],
-  );
+  const autoExpandChildren = useAutoStoryMode({
+    autoModeIterations: params.autoModeIterations,
+    chooseContinuation,
+    generateContinuation,
+    currentLoomId,
+    refreshTreeFromLoom,
+    setSelectedOptions,
+    setInFlight,
+    setGeneratingInfo,
+  });
 
   const saveCurrentNodeRevision = useCallback(
     async (revision: StoryDraft) => {
