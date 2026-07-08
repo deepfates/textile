@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createStoryIndexShareUrl,
   createStoryFocusShareUrl,
+  createLocalStoryUrl,
   createStoryShareUrl,
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
@@ -66,5 +67,16 @@ describe("story runtime references", () => {
       loomId: "loom-1",
       turnId: "turn-1",
     });
+  });
+
+  it("creates clean local URLs by removing only story references", () => {
+    const location = new URL("https://textile.test/read?draft=1&ref=abc#turn");
+
+    const url = new URL(createLocalStoryUrl(location));
+
+    expect(url.pathname).toBe("/read");
+    expect(url.searchParams.get("draft")).toBe("1");
+    expect(url.searchParams.has("ref")).toBe(false);
+    expect(url.hash).toBe("");
   });
 });

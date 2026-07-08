@@ -61,7 +61,6 @@ import {
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
   getStoryIndex,
-  replaceStoryFocusUrl,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
 
@@ -253,12 +252,6 @@ export const GamepadInterface = () => {
     }
     return node;
   }, [storyTree, currentDepth, selectedOptions]);
-
-  useEffect(() => {
-    if (!currentLoomReady) return;
-    const turnId = getCurrentPath().at(-1)?.id ?? null;
-    replaceStoryFocusUrl(currentLoomId, turnId);
-  }, [currentLoomReady, currentLoomId, getCurrentPath]);
 
   const storyTextRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion =
@@ -906,6 +899,7 @@ export const GamepadInterface = () => {
     <main
       className="gamepad-main bg-theme-bg text-theme-text font-mono"
       aria-label="Story Interface"
+      data-story-ready={currentLoomReady ? "true" : "false"}
     >
       <InstallPrompt />
       <div
