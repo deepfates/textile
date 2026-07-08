@@ -541,6 +541,27 @@ html, body {
   opacity: 0.8;
 }
 
+@media (max-width: 480px) {
+  .mode-bar {
+    align-items: flex-start;
+  }
+
+  .mode-bar-hint-frame {
+    max-width: none;
+  }
+
+  .mode-bar-hint {
+    overflow-x: visible;
+    white-space: normal;
+    text-align: right;
+    line-height: 1.35;
+  }
+
+  .mode-bar-scroll-hint {
+    display: none;
+  }
+}
+
 /* ===== BUTTONS ===== */
 .gamepad-btn {
   width: var(--button-size);
