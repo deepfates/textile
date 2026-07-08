@@ -148,13 +148,16 @@ export function createStoryFocusShareUrl(
     : createStoryShareUrl(loomId, location);
 }
 
-export function replaceStoryFocusUrl(
-  loomId: string,
-  turnId: string | null,
-  location: Location = window.location,
-) {
+export function createLocalStoryUrl(location: Location | URL = window.location) {
+  const url = new URL(location.href);
+  url.searchParams.delete("ref");
+  url.hash = "";
+  return url.toString();
+}
+
+export function clearStoryReferenceUrl(location: Location = window.location) {
   if (typeof window === "undefined") return;
-  const nextUrl = createStoryFocusShareUrl(loomId, turnId, location);
+  const nextUrl = createLocalStoryUrl(location);
   const currentUrl = window.location.href;
   if (nextUrl !== currentUrl) {
     window.history.replaceState(window.history.state, "", nextUrl);
