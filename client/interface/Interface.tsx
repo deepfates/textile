@@ -1017,6 +1017,8 @@ export const GamepadInterface = () => {
                   <TreeListMenu
                     trees={trees}
                     storyTitles={storyTitles}
+                    currentStoryKey={currentLoomId}
+                    storyMeta={getStoryMeta()}
                     selectedIndex={cursorOnTabs ? -1 : selectedTreeIndex}
                     selectedColumn={selectedTreeColumn}
                     sortOrder={storySort}

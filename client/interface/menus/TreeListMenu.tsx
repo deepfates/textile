@@ -4,6 +4,7 @@ import {
   type StorySortOption,
 } from "../utils/storyMeta";
 import { Row } from "../components/Row";
+import type { StoryNode } from "../types";
 
 const SORT_LABELS: Record<StorySortOption, string> = {
   recent: "Recent",
@@ -55,6 +56,66 @@ const LinkIcon = () => (
   </svg>
 );
 
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+export function countStoryNodes(node: StoryNode): number {
+  return 1 + (node.continuations ?? []).reduce(
+    (total, child) => total + countStoryNodes(child),
+    0,
+  );
+}
+
+export function formatStoryDateLabel(
+  isoDate: string | undefined,
+  action = "edited",
+  now = new Date(),
+): string | null {
+  if (!isoDate) return null;
+
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const month = MONTH_LABELS[date.getUTCMonth()];
+  const day = date.getUTCDate();
+  const sameYear = date.getUTCFullYear() === now.getUTCFullYear();
+  return sameYear
+    ? `${action} ${month} ${day}`
+    : `${action} ${month} ${day}, ${date.getUTCFullYear()}`;
+}
+
+export function getStoryRowPreview({
+  tree,
+  isCurrent,
+  metaDateLabel,
+}: {
+  tree: { root: StoryNode };
+  isCurrent: boolean;
+  metaDateLabel?: string | null;
+}): string {
+  const nodeCount = countStoryNodes(tree.root);
+  const metadata = [
+    isCurrent ? "current" : null,
+    `${nodeCount} ${nodeCount === 1 ? "node" : "nodes"}`,
+    metaDateLabel,
+  ].filter(Boolean);
+  const text = (tree.root.text ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
+
+  return [...metadata, text].join(" · ");
+}
+
 /**
  * Stories list.  Mirrors the Models-tab row layout:
  *   row 0 — Sort pick (Recent / A→Z / Z→A)
@@ -70,6 +131,8 @@ export const TreeListMenu = ({
   selectedIndex,
   selectedColumn,
   sortOrder,
+  currentStoryKey,
+  storyMeta,
   onToggleSort,
   onSelect,
   onNew,
@@ -231,17 +294,34 @@ export const TreeListMenu = ({
           ) : undefined;
 
         const title = storyTitles?.[key] ?? key;
-        const preview = (tree.root.text ?? "").slice(0, 60);
+        const isCurrent = key === currentStoryKey;
+        const meta = storyMeta?.[key];
+        const metaDateLabel = meta?.updatedAt
+          ? formatStoryDateLabel(meta.updatedAt, "edited")
+          : meta?.lastActiveAt
+            ? formatStoryDateLabel(meta.lastActiveAt, "opened")
+            : formatStoryDateLabel(meta?.createdAt, "created");
+        const preview = getStoryRowPreview({
+          tree,
+          isCurrent,
+          metaDateLabel,
+        });
 
         return (
           <Row
             key={key}
             kind="action"
             label={title}
-            preview={preview ? `${preview}…` : undefined}
+            preview={preview}
             stacked
             trailing={trailing}
             selected={bodySelected}
+            className={[
+              "story-menu-item",
+              isCurrent ? "story-menu-item--current" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onActivate={() => {
               onSelect(key);
               onHighlight?.(rowIndex, 0);
