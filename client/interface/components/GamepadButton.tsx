@@ -2,6 +2,8 @@ import { GamepadButtonProps } from "../types";
 
 export const GamepadButton = ({
   label,
+  caption,
+  ariaLabel,
   className = "",
   active = false,
   disabled = false,
@@ -17,7 +19,12 @@ export const GamepadButton = ({
     onMouseLeave={disabled ? undefined : onMouseUp}
     disabled={disabled}
     aria-pressed={active}
+    aria-label={ariaLabel}
+    title={ariaLabel}
   >
-    {label}
+    <span className="gamepad-btn-glyph" aria-hidden="true">
+      {label}
+    </span>
+    {caption && <span className="gamepad-btn-caption">{caption}</span>}
   </button>
 );

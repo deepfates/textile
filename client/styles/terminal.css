@@ -541,13 +541,36 @@ html, body {
   opacity: 0.8;
 }
 
+@media (max-width: 480px) {
+  .mode-bar {
+    align-items: flex-start;
+  }
+
+  .mode-bar-hint-frame {
+    max-width: none;
+  }
+
+  .mode-bar-hint {
+    overflow-x: visible;
+    white-space: normal;
+    text-align: right;
+    line-height: 1.35;
+  }
+
+  .mode-bar-scroll-hint {
+    display: none;
+  }
+}
+
 /* ===== BUTTONS ===== */
 .gamepad-btn {
   width: var(--button-size);
   height: var(--button-size);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.1rem;
   border: 2px solid var(--theme-text);
   background: transparent;
   color: var(--theme-text);
@@ -555,6 +578,17 @@ html, body {
   user-select: none;
   font-family: inherit;
   transition: all 0.1s ease;
+}
+
+.gamepad-btn-glyph {
+  line-height: 1;
+}
+
+.gamepad-btn-caption {
+  font-size: 0.625rem;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .gamepad-btn:hover {
@@ -573,7 +607,11 @@ html, body {
   width: var(--button-size-large);
   height: var(--button-size-large);
   border-radius: 50%;
-  font-size: calc(var(--button-size-large) * 0.5);
+  font-size: calc(var(--button-size-large) * 0.42);
+}
+
+.terminal-buttons .gamepad-btn-caption {
+  font-size: 0.5rem;
 }
 
 .terminal-menu .gamepad-btn {
@@ -653,6 +691,21 @@ html, body {
 }
 
 .minimap-viewport::-webkit-scrollbar { display: none; }
+
+.minimap-viewport.single-node {
+  display: grid;
+  place-items: center;
+}
+
+.minimap-single-node-canvas {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.minimap-single-node-affordance {
+  opacity: 0.34;
+}
 
 .minimap-minibuffer {
   border-top: 1px solid var(--theme-border);

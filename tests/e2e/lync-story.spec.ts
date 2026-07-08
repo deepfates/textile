@@ -87,6 +87,36 @@ test("same-browser tabs converge on generated story updates without refresh", as
   await context.close();
 });
 
+test("enter from the Stories tab strip drops into rows on the New Story path", async ({
+  page,
+}) => {
+  await mockGeneration(page, "Keyboard story path");
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+
+  await page.keyboard.press("`");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".mode-bar-title")).toHaveText("TABS");
+  await expect(page.locator(".mode-bar-hint")).toContainText("↵/↓: ROWS");
+
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Stories" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".navbar-minibuffer")).toContainText("tabs");
+
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".mode-bar-title")).toHaveText("STORIES");
+  await expect(page.locator(".navbar-minibuffer")).toContainText("Sort");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".navbar-minibuffer")).toContainText("+ New Story");
+});
+
 test("stale v0 local-first storage does not block the current v1 app", async ({
   browser,
 }) => {
