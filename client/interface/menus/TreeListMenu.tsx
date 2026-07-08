@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { TreeListProps } from "../types";
 import {
   orderKeysByStorySort,
@@ -55,6 +57,72 @@ const LinkIcon = () => (
   </svg>
 );
 
+const ThreadLinkIcon = () => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+  >
+    <path
+      d="M3 2h8a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H8.8l-3.1 3.1V9H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 1.3A.7.7 0 0 0 2.3 4v3a.7.7 0 0 0 .7.7h4v1.2l1.3-1.2H11a.7.7 0 0 0 .7-.7V4a.7.7 0 0 0-.7-.7H3zm6.4 7.1h1.9l1.3 1.2v-1.2h.4a.7.7 0 0 0 .7-.7V6.5h1.3v3.2a2 2 0 0 1-1.3 1.9v3.1l-3.1-3h-1.4v-1.3z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+const MoreIcon = () => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+  >
+    <path
+      d="M3.5 9.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm4.5 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm4.5 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+interface StoryActionButtonProps {
+  label: string;
+  icon: ReactElement;
+  selected: boolean;
+  secondary?: boolean;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onFocus: () => void;
+}
+
+const StoryActionButton = ({
+  label,
+  icon,
+  selected,
+  secondary,
+  onClick,
+  onFocus,
+}: StoryActionButtonProps) => (
+  <button
+    type="button"
+    className={[
+      "story-action",
+      secondary ? "story-action--secondary" : "",
+      selected ? "selected" : "",
+    ]
+      .filter(Boolean)
+      .join(" ")}
+    aria-label={label}
+    title={label}
+    onClick={onClick}
+    onFocus={onFocus}
+  >
+    {icon}
+    <span className="story-action-label">{label}</span>
+  </button>
+);
+
 /**
  * Stories list.  Mirrors the Models-tab row layout:
  *   row 0 — Sort pick (Recent / A→Z / Z→A)
@@ -80,6 +148,10 @@ export const TreeListMenu = ({
   onExportThread,
   onHighlight,
 }: TreeListProps) => {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const ignoreMoreClickRef = useRef(false);
+  const selectedPositionRef = useRef({ selectedColumn, selectedIndex });
+  const [openSecondaryKey, setOpenSecondaryKey] = useState<string | null>(null);
   const orderedKeys = orderKeysByStorySort(trees, sortOrder);
   const hasShare = Boolean(onShareStory);
   const hasThreadShare = Boolean(onShareThread);
@@ -95,37 +167,70 @@ export const TreeListMenu = ({
     ? 1 + (hasShare ? 1 : 0) + (hasThreadShare ? 1 : 0) + (hasJson ? 1 : 0)
     : -1;
 
+  useEffect(() => {
+    if (!openSecondaryKey) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpenSecondaryKey(null);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenSecondaryKey(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSecondaryKey]);
+
+  useEffect(() => {
+    const previous = selectedPositionRef.current;
+    const selectionChanged =
+      previous.selectedIndex !== selectedIndex ||
+      previous.selectedColumn !== selectedColumn;
+
+    selectedPositionRef.current = { selectedColumn, selectedIndex };
+
+    if (selectionChanged && selectedColumn === 0) {
+      setOpenSecondaryKey(null);
+    }
+  }, [selectedColumn, selectedIndex]);
+
   return (
-    <div className="menu-content">
+    <div className="menu-content" ref={menuRef}>
       <Row
         kind="pick"
         label="Sort"
         value={SORT_LABELS[sortOrder]}
         selected={selectedIndex === 0 && selectedColumn === 0}
         onActivate={() => {
+          setOpenSecondaryKey(null);
           onToggleSort?.(1);
           onHighlight?.(0, 0);
         }}
         trailing={
           hasIndexShare ? (
             <div className="story-action-cluster" role="group">
-              <button
-                type="button"
-                className={`story-action${
-                  selectedIndex === 0 && selectedColumn === 1
-                    ? " selected"
-                    : ""
-                }`}
-                aria-label="Copy story list link"
+              <StoryActionButton
+                label="Index link"
+                icon={<LinkIcon />}
+                selected={selectedIndex === 0 && selectedColumn === 1}
                 onClick={(event) => {
                   event.stopPropagation();
+                  setOpenSecondaryKey(null);
                   onShareIndex?.();
                   onHighlight?.(0, 1);
                 }}
                 onFocus={() => onHighlight?.(0, 1)}
-              >
-                <LinkIcon />
-              </button>
+              />
             </div>
           ) : undefined
         }
@@ -136,6 +241,7 @@ export const TreeListMenu = ({
         glyph="+"
         selected={selectedIndex === 1 && selectedColumn === 0}
         onActivate={() => {
+          setOpenSecondaryKey(null);
           onNew?.();
           onHighlight?.(1, 0);
         }}
@@ -162,70 +268,131 @@ export const TreeListMenu = ({
           selectedIndex === rowIndex &&
           selectedColumn === threadColumn;
 
-        const trailing =
-          hasShare || hasThreadShare || hasJson || hasThread ? (
-            <div className="story-action-cluster" role="group">
-              {hasShare ? (
-                <button
-                  type="button"
-                  className={`story-action${shareSelected ? " selected" : ""}`}
-                  aria-label="Copy story link"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onShareStory?.(key);
-                    onHighlight?.(rowIndex, shareColumn);
-                  }}
-                  onFocus={() => onHighlight?.(rowIndex, shareColumn)}
-                >
-                  <LinkIcon />
-                </button>
-              ) : null}
-              {hasThreadShare ? (
-                <button
-                  type="button"
-                  className={`story-action${
-                    threadShareSelected ? " selected" : ""
-                  }`}
-                  aria-label="Copy current thread link"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onShareThread?.(key);
-                    onHighlight?.(rowIndex, threadShareColumn);
-                  }}
-                  onFocus={() => onHighlight?.(rowIndex, threadShareColumn)}
-                >
-                  <LinkIcon />
-                </button>
-              ) : null}
+        const secondarySelected = Boolean(jsonSelected || threadSelected);
+        const secondaryOpen = openSecondaryKey === key;
+        const secondaryActionsId = `story-secondary-actions-${rowIndex}`;
+        const toggleSecondaryActions = () => {
+          setOpenSecondaryKey((openKey) => (openKey === key ? null : key));
+        };
+        const secondaryActions =
+          hasJson || hasThread ? (
+            <div
+              id={secondaryActionsId}
+              className="story-secondary-actions"
+            >
               {hasJson ? (
-                <button
-                  type="button"
-                  className={`story-action${jsonSelected ? " selected" : ""}`}
-                  aria-label="Export story as JSON"
+                <StoryActionButton
+                  label="Export JSON"
+                  icon={<SaveIcon />}
+                  selected={Boolean(jsonSelected)}
+                  secondary
                   onClick={(event) => {
                     event.stopPropagation();
                     onExportJson?.(key);
                     onHighlight?.(rowIndex, jsonColumn);
+                    setOpenSecondaryKey(null);
                   }}
                   onFocus={() => onHighlight?.(rowIndex, jsonColumn)}
-                >
-                  <SaveIcon />
-                </button>
+                />
               ) : null}
               {hasThread ? (
-                <button
-                  type="button"
-                  className={`story-action${threadSelected ? " selected" : ""}`}
-                  aria-label="Export current thread"
+                <StoryActionButton
+                  label="Export thread"
+                  icon={<PrintIcon />}
+                  selected={Boolean(threadSelected)}
+                  secondary
                   onClick={(event) => {
                     event.stopPropagation();
                     onExportThread?.(key);
                     onHighlight?.(rowIndex, threadColumn);
+                    setOpenSecondaryKey(null);
                   }}
                   onFocus={() => onHighlight?.(rowIndex, threadColumn)}
+                />
+              ) : null}
+            </div>
+          ) : null;
+
+        const trailing =
+          hasShare || hasThreadShare || secondaryActions ? (
+            <div className="story-action-cluster" role="group">
+              {hasShare ? (
+                <StoryActionButton
+                  label="Story link"
+                  icon={<LinkIcon />}
+                  selected={Boolean(shareSelected)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setOpenSecondaryKey(null);
+                    onShareStory?.(key);
+                    onHighlight?.(rowIndex, shareColumn);
+                  }}
+                  onFocus={() => onHighlight?.(rowIndex, shareColumn)}
+                />
+              ) : null}
+              {hasThreadShare ? (
+                <StoryActionButton
+                  label="Thread link"
+                  icon={<ThreadLinkIcon />}
+                  selected={Boolean(threadShareSelected)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setOpenSecondaryKey(null);
+                    onShareThread?.(key);
+                    onHighlight?.(rowIndex, threadShareColumn);
+                  }}
+                  onFocus={() => onHighlight?.(rowIndex, threadShareColumn)}
+                />
+              ) : null}
+              {secondaryActions ? (
+                <div
+                  className={`story-action-more${
+                    secondarySelected ? " selected" : ""
+                  }${secondaryOpen ? " is-open" : ""}`}
+                  onPointerDown={(event) => {
+                    const summary = (event.target as Element).closest(
+                      ".story-action-more-summary",
+                    );
+                    if (!summary || event.pointerType === "mouse") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    ignoreMoreClickRef.current = true;
+                    toggleSecondaryActions();
+                  }}
+                  onClick={(event) => {
+                    const summary = (event.target as Element).closest(
+                      ".story-action-more-summary",
+                    );
+                    event.stopPropagation();
+                    if (ignoreMoreClickRef.current) {
+                      ignoreMoreClickRef.current = false;
+                      return;
+                    }
+                    if (summary) {
+                      toggleSecondaryActions();
+                    }
+                  }}
                 >
-                  <PrintIcon />
-                </button>
+                  <button
+                    type="button"
+                    className="story-action story-action-more-summary"
+                    aria-label="More story actions"
+                    aria-expanded={secondaryOpen}
+                    aria-controls={secondaryActionsId}
+                    title="More story actions"
+                    onFocus={() => {
+                      if (jsonSelected) {
+                        onHighlight?.(rowIndex, jsonColumn);
+                      } else if (threadSelected) {
+                        onHighlight?.(rowIndex, threadColumn);
+                      }
+                    }}
+                  >
+                    <MoreIcon />
+                    <span className="story-action-label">More</span>
+                  </button>
+                  {secondaryActions}
+                </div>
               ) : null}
             </div>
           ) : undefined;
@@ -243,6 +410,7 @@ export const TreeListMenu = ({
             trailing={trailing}
             selected={bodySelected}
             onActivate={() => {
+              setOpenSecondaryKey(null);
               onSelect(key);
               onHighlight?.(rowIndex, 0);
             }}
