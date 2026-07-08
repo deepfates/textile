@@ -59,6 +59,8 @@ export interface TreeListProps {
 
 export interface GamepadButtonProps {
   label: string;
+  caption?: string;
+  ariaLabel: string;
   className?: string;
   active?: boolean;
   disabled?: boolean;
@@ -74,6 +76,7 @@ export interface DPadProps {
 
 export interface MenuButtonProps {
   label: string;
+  ariaLabel: string;
   active: boolean;
   onMouseDown: () => void;
   onMouseUp: () => void;

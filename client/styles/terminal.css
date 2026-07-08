@@ -567,8 +567,10 @@ html, body {
   width: var(--button-size);
   height: var(--button-size);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.1rem;
   border: 2px solid var(--theme-text);
   background: transparent;
   color: var(--theme-text);
@@ -576,6 +578,17 @@ html, body {
   user-select: none;
   font-family: inherit;
   transition: all 0.1s ease;
+}
+
+.gamepad-btn-glyph {
+  line-height: 1;
+}
+
+.gamepad-btn-caption {
+  font-size: 0.625rem;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .gamepad-btn:hover {
@@ -594,7 +607,11 @@ html, body {
   width: var(--button-size-large);
   height: var(--button-size-large);
   border-radius: 50%;
-  font-size: calc(var(--button-size-large) * 0.5);
+  font-size: calc(var(--button-size-large) * 0.42);
+}
+
+.terminal-buttons .gamepad-btn-caption {
+  font-size: 0.5rem;
 }
 
 .terminal-menu .gamepad-btn {

@@ -1224,12 +1224,16 @@ export const GamepadInterface = () => {
             <div className="terminal-buttons">
               <GamepadButton
                 label="⌫"
+                caption="Back"
+                ariaLabel="B button: go back"
                 active={activeControls.b}
                 onMouseDown={() => handleControlPress("Backspace")}
                 onMouseUp={() => handleControlRelease("Backspace")}
               />
               <GamepadButton
                 label="↵"
+                caption="Choose"
+                ariaLabel="A button: choose"
                 active={activeControls.a}
                 onMouseDown={() => handleControlPress("Enter")}
                 onMouseUp={() => handleControlRelease("Enter")}
@@ -1245,12 +1249,14 @@ export const GamepadInterface = () => {
           <div className="terminal-menu">
             <MenuButton
               label="SELECT"
+              ariaLabel="Select button: open settings"
               active={activeControls.select}
               onMouseDown={() => handleControlPress("`")}
               onMouseUp={() => handleControlRelease("`")}
             />
             <MenuButton
               label="START"
+              ariaLabel="Start button: switch stories"
               active={activeControls.start}
               onMouseDown={() => handleControlPress("Escape")}
               onMouseUp={() => handleControlRelease("Escape")}
