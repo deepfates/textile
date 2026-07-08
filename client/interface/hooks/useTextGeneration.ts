@@ -14,10 +14,10 @@ interface GenerationError {
 }
 
 export const OPENROUTER_API_KEY_ERROR_MESSAGE =
-  "No OpenRouter API key is set. Add OPENROUTER_API_KEY to generate.";
+  "OpenRouter API key is missing or invalid. Add or update OPENROUTER_API_KEY to generate.";
 
 const OPENROUTER_AUTH_ERROR_PATTERNS = [
-  /\b401\b.*(?:missing authentication header|invalid api key|incorrect api key|no auth credentials)/i,
+  /\b401\b.*(?:missing authentication header|user not found|invalid api key|incorrect api key|no auth credentials)/i,
   /missing authentication header/i,
   /invalid api key/i,
   /incorrect api key/i,

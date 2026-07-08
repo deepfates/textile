@@ -15,9 +15,7 @@ describe("formatGenerationErrorMessage", () => {
 
   it("turns invalid OpenRouter keys into friendly setup copy", () => {
     expect(
-      formatGenerationErrorMessage(
-        new Error("401 Unauthorized: invalid API key"),
-      ),
+      formatGenerationErrorMessage(new Error("401 User not found.")),
     ).toBe(OPENROUTER_API_KEY_ERROR_MESSAGE);
   });
 
