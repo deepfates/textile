@@ -14,9 +14,13 @@ export const DPad = ({
       onMouseDown={() => onControlPress("ArrowUp")}
       onMouseUp={() => onControlRelease("ArrowUp")}
       onMouseLeave={() => onControlRelease("ArrowUp")}
-      aria-label="Up"
+      aria-label="Move up"
+      title="Move up"
     >
-      ▴
+      <span className="gamepad-btn-glyph" aria-hidden="true">
+        ▴
+      </span>
+      <span className="gamepad-btn-caption">Up</span>
     </button>
     {/* Left */}
     <button
@@ -26,9 +30,13 @@ export const DPad = ({
       onMouseDown={() => onControlPress("ArrowLeft")}
       onMouseUp={() => onControlRelease("ArrowLeft")}
       onMouseLeave={() => onControlRelease("ArrowLeft")}
-      aria-label="Left"
+      aria-label="Move left"
+      title="Move left"
     >
-      ◂
+      <span className="gamepad-btn-glyph" aria-hidden="true">
+        ◂
+      </span>
+      <span className="gamepad-btn-caption">Left</span>
     </button>
     {/* Right */}
     <button
@@ -38,9 +46,13 @@ export const DPad = ({
       onMouseDown={() => onControlPress("ArrowRight")}
       onMouseUp={() => onControlRelease("ArrowRight")}
       onMouseLeave={() => onControlRelease("ArrowRight")}
-      aria-label="Right"
+      aria-label="Move right"
+      title="Move right"
     >
-      ▸
+      <span className="gamepad-btn-glyph" aria-hidden="true">
+        ▸
+      </span>
+      <span className="gamepad-btn-caption">Right</span>
     </button>
     {/* Down */}
     <button
@@ -50,9 +62,13 @@ export const DPad = ({
       onMouseDown={() => onControlPress("ArrowDown")}
       onMouseUp={() => onControlRelease("ArrowDown")}
       onMouseLeave={() => onControlRelease("ArrowDown")}
-      aria-label="Down"
+      aria-label="Move down"
+      title="Move down"
     >
-      ▾
+      <span className="gamepad-btn-glyph" aria-hidden="true">
+        ▾
+      </span>
+      <span className="gamepad-btn-caption">Down</span>
     </button>
   </div>
 );
