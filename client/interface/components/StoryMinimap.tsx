@@ -80,6 +80,9 @@ const LENGTH_EXPONENT = 0.75;
 const CONNECTOR_LENGTH = 12; // Fixed short connector between nodes
 const NODE_WIDTH = 14; // Width of the pill-shaped nodes - compact
 const NODE_RADIUS = 2; // Border radius for the pill shape - crisp corners
+const SINGLE_NODE_SVG_WIDTH = 240;
+const SINGLE_NODE_SVG_HEIGHT = 260;
+const SINGLE_NODE_Y = 72;
 
 /**
  * Tidy tree layout using d3-hierarchy - no overlaps, optimal spacing
@@ -257,16 +260,22 @@ export const StoryMinimap = ({
 
   // Bounds for <svg> viewBox - ensure it's wide enough for scrolling
   const coordValues = Object.values(coords);
+  const isSingleNode = coordValues.length === 1 && edges.length === 0;
   const xCoords = coordValues.map((c) => c.x);
   const minX = Math.min(...xCoords);
   const maxX = Math.max(...xCoords);
   const maxY = Math.max(...coordValues.map((c) => c.y));
+  const singleNodeHeight = coordValues[0]?.nodeHeight ?? MAX_NODE_HEIGHT;
 
 
   // Add padding around the tree
   const padding = LANE_WIDTH * 2;
-  const svgWidth = Math.max(600, maxX - minX + padding * 2); // Ensure minimum width
-  const svgHeight = Math.max(maxY + MAX_NODE_HEIGHT, ROW_HEIGHT * 4);
+  const svgWidth = isSingleNode
+    ? SINGLE_NODE_SVG_WIDTH
+    : Math.max(600, maxX - minX + padding * 2); // Ensure minimum width
+  const svgHeight = isSingleNode
+    ? SINGLE_NODE_SVG_HEIGHT
+    : Math.max(maxY + MAX_NODE_HEIGHT, ROW_HEIGHT * 4);
 
   // Center the tree horizontally - offset all x coords so tree is centered
   const centerX = svgWidth / 2;
@@ -303,7 +312,7 @@ export const StoryMinimap = ({
     ) => {
       const nodeCoord = coords[node.id];
       const nodeX = nodeCoord.x + rootOffset;
-      const nodeY = nodeCoord.y;
+      const nodeY = isSingleNode ? SINGLE_NODE_Y : nodeCoord.y;
 
       let minX = nodeX,
         maxX = nodeX,
@@ -394,14 +403,21 @@ export const StoryMinimap = ({
     selectedSibling?.id,
     coords,
     rootOffset,
+    isSingleNode,
     isVisible,
     lastMapNodeId,
   ]);
 
   return (
     <div className="minimap-container view-fade">
-      <div ref={viewportRef} className="minimap-viewport">
-        <div style={{ width: svgWidth, minWidth: "100%" }}>
+      <div
+        ref={viewportRef}
+        className={`minimap-viewport ${isSingleNode ? "single-node" : ""}`}
+      >
+        <div
+          className={isSingleNode ? "minimap-single-node-canvas" : undefined}
+          style={{ width: svgWidth, minWidth: "100%" }}
+        >
           <svg width={svgWidth} height={svgHeight}>
             {/* Define patterns for different node states */}
             <defs>
@@ -417,6 +433,40 @@ export const StoryMinimap = ({
                 <circle cx="2" cy="2" r="0.4" fill="var(--secondary-color)"/>
               </pattern>
             </defs>
+            {isSingleNode ? (
+              <g className="minimap-single-node-affordance" aria-hidden="true">
+                <path
+                  d={`M${centerX},${SINGLE_NODE_Y + singleNodeHeight - NODE_RADIUS / 2} L${centerX},154`}
+                  stroke="var(--border-color)"
+                  strokeWidth={0.8}
+                  strokeLinecap="square"
+                  strokeDasharray="2 4"
+                  fill="none"
+                />
+                {[-32, 0, 32].map((offset) => (
+                  <g key={offset}>
+                    <path
+                      d={`M${centerX},154 Q${centerX},166 ${centerX + offset},166 L${centerX + offset},184`}
+                      stroke="var(--border-color)"
+                      strokeWidth={0.8}
+                      strokeLinecap="square"
+                      fill="none"
+                    />
+                    <rect
+                      x={centerX + offset - NODE_WIDTH / 2}
+                      y={184}
+                      width={NODE_WIDTH}
+                      height={20}
+                      rx={NODE_RADIUS}
+                      ry={NODE_RADIUS}
+                      fill="none"
+                      stroke="var(--font-color)"
+                      strokeWidth={0.8}
+                    />
+                  </g>
+                ))}
+              </g>
+            ) : null}
             {/* Render edges first so they sit behind nodes */}
             {edges.map(({ from, to, key }) => {
               const a = coords[from.id];
@@ -491,7 +541,7 @@ export const StoryMinimap = ({
                   <rect
                     className={`minimap-node ${isGenerating ? "generating" : ""}`}
                     x={c.x + rootOffset - NODE_WIDTH / 2}
-                    y={c.y}
+                    y={isSingleNode ? SINGLE_NODE_Y : c.y}
                     width={NODE_WIDTH}
                     height={c.nodeHeight}
                     rx={NODE_RADIUS}
@@ -533,7 +583,9 @@ export const StoryMinimap = ({
       </div>
       <Minibuffer
         text={
-          selectedSibling
+          isSingleNode
+            ? "A to branch from here"
+            : selectedSibling
             ? selectedSibling.text.split("\n")[0]
             : highlightedNode.text.split("\n")[0]
         }
