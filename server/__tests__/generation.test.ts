@@ -1,5 +1,16 @@
+import { EventEmitter } from "events";
 import { describe, it, expect } from "bun:test";
-import { getBoundaryRegex, findBoundaryCutoff, normalizeJoin } from "../apis/generation.helpers.ts";
+import {
+  findBoundaryCutoff,
+  getBoundaryRegex,
+  normalizeJoin,
+  prepareGeneratedText,
+  shouldDeferPossiblePreamble,
+  startsWithChatPreamble,
+  stripMarkdownEmphasis,
+} from "../apis/generation.helpers.ts";
+import { generateText } from "../apis/generation.ts";
+import { openai } from "../apis/openaiClient.ts";
 
 
 
@@ -208,5 +219,131 @@ describe("normalizeJoin (seam whitespace normalization)", () => {
     const next = "world";
     const out = normalizeJoin(prev, next);
     expect(out).toBe("world");
+  });
+});
+
+describe("generation cleanup", () => {
+  it("detects standalone chat-model continuation preambles for retry", () => {
+    expect(startsWithChatPreamble("Of course. Here is the story continued:"))
+      .toBe(true);
+    expect(startsWithChatPreamble("Continuing the story:"))
+      .toBe(true);
+    expect(startsWithChatPreamble("\nSure. Here is the next scene. "))
+      .toBe(true);
+  });
+
+  it("does not detect plausible prose openings as retryable preambles", () => {
+    expect(
+      startsWithChatPreamble(
+        "Of course. Here is the story continued: the narrator lied.",
+      ),
+    ).toBe(false);
+    expect(
+      startsWithChatPreamble(
+        "Here is the story continued: the inscription began on the wall.",
+      ),
+    ).toBe(false);
+    expect(startsWithChatPreamble("Continuing the story: rain filled the street."))
+      .toBe(false);
+    expect(
+      startsWithChatPreamble(
+        "Of course, here is the story continued in ink across the page.",
+      ),
+    ).toBe(false);
+  });
+
+  it("defers partial preambles while streaming", () => {
+    expect(shouldDeferPossiblePreamble("Of cour")).toBe(true);
+    expect(shouldDeferPossiblePreamble("Of course. Here is the story continued: rain"))
+      .toBe(false);
+  });
+
+  it("removes markdown emphasis markers from prose", () => {
+    expect(stripMarkdownEmphasis("The **red door** opened and *clicked*."))
+      .toBe("The red door opened and clicked.");
+  });
+
+  it("adds the missing story seam space when a continuation starts tight", () => {
+    expect(prepareGeneratedText("the day before.", "Morning came."))
+      .toBe(" Morning came.");
+  });
+
+  it("does not strip preamble-like text during cleanup", () => {
+    expect(
+      prepareGeneratedText(
+        "the day before.",
+        "Of course. Here is the story continued: the narrator lied.",
+      ),
+    ).toBe(" Of course. Here is the story continued: the narrator lied.");
+  });
+});
+
+describe("generateText upstream errors", () => {
+  it("sends an SSE error before any terminal marker when request close races upstream failure", async () => {
+    const originalCreate = openai.completions.create;
+    const originalConsoleError = console.error;
+    const req = new EventEmitter() as EventEmitter & {
+      body: Record<string, unknown>;
+    };
+    req.body = {
+      prompt: "Once upon a time",
+      model: "deepseek/deepseek-chat-v3.1",
+      length: "sentence",
+      temperature: 1,
+    };
+
+    const writes: string[] = [];
+    let ended = false;
+    let headersSent = false;
+    const res = new EventEmitter() as EventEmitter & {
+      headersSent: boolean;
+      writableEnded: boolean;
+      setHeader: (name: string, value: string) => void;
+      flushHeaders: () => void;
+      write: (chunk: string) => void;
+      end: () => void;
+      status: (code: number) => typeof res;
+      json: (body: unknown) => void;
+    };
+    Object.defineProperty(res, "headersSent", {
+      get: () => headersSent,
+    });
+    Object.defineProperty(res, "writableEnded", {
+      get: () => ended,
+    });
+    res.setHeader = () => {};
+    res.flushHeaders = () => {
+      headersSent = true;
+    };
+    res.write = (chunk: string) => {
+      if (!ended) writes.push(chunk);
+    };
+    res.end = () => {
+      ended = true;
+    };
+    res.status = () => res;
+    res.json = (body: unknown) => {
+      writes.push(JSON.stringify(body));
+      ended = true;
+    };
+
+    openai.completions.create = (async () => {
+      req.emit("close");
+      throw new Error("Request was aborted.");
+    }) as typeof openai.completions.create;
+    console.error = () => {};
+
+    try {
+      await generateText(req as never, res as never);
+    } finally {
+      openai.completions.create = originalCreate;
+      console.error = originalConsoleError;
+    }
+
+    expect(writes).toEqual([
+      `data: ${JSON.stringify({ error: "Request was aborted." })}\n\n`,
+    ]);
+    expect(writes.join("")).not.toContain("[DONE]");
+    expect(ended).toBe(true);
   });
 });

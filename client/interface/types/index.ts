@@ -45,6 +45,8 @@ export interface TreeListProps {
   selectedIndex: number;
   selectedColumn: number;
   sortOrder: import("../utils/storyMeta").StorySortOption;
+  currentStoryKey?: string;
+  storyMeta?: import("../utils/storyMeta").StoryMetaMap;
   onToggleSort?: (direction: -1 | 1) => void;
   onSelect: (key: string) => void;
   onDelete?: (key: string) => void;
@@ -59,6 +61,8 @@ export interface TreeListProps {
 
 export interface GamepadButtonProps {
   label: string;
+  caption?: string;
+  ariaLabel: string;
   className?: string;
   active?: boolean;
   disabled?: boolean;
@@ -74,6 +78,7 @@ export interface DPadProps {
 
 export interface MenuButtonProps {
   label: string;
+  ariaLabel: string;
   active: boolean;
   onMouseDown: () => void;
   onMouseUp: () => void;

@@ -38,7 +38,11 @@ async function readCapturedClipboard(page: Page) {
 }
 
 function referenceFromPageUrl(page: Page) {
-  const encoded = new URL(page.url()).searchParams.get("ref");
+  return referenceFromUrl(page.url());
+}
+
+function referenceFromUrl(url: string) {
+  const encoded = new URL(url).searchParams.get("ref");
   if (!encoded) return null;
   return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as {
     kind: string;
@@ -47,10 +51,14 @@ function referenceFromPageUrl(page: Page) {
   };
 }
 
-async function waitForCurrentThreadRef(page: Page) {
-  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject({
-    kind: "thread",
-  });
+async function waitForStoryIndex(page: Page) {
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("textile-lync-v1-index-id")),
+  ).toBeTruthy();
+  await expect(page.locator(".gamepad-main")).toHaveAttribute(
+    "data-story-ready",
+    "true",
+  );
 }
 
 declare global {
@@ -70,7 +78,7 @@ test("same-browser tabs converge on generated story updates without refresh", as
   await expect(pageOne.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(pageOne);
+  await waitForStoryIndex(pageOne);
 
   const pageTwo = await context.newPage();
   await mockGeneration(pageTwo, "Same browser sync");
@@ -78,13 +86,43 @@ test("same-browser tabs converge on generated story updates without refresh", as
   await expect(pageTwo.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(pageTwo);
+  await waitForStoryIndex(pageTwo);
 
   await pageOne.keyboard.press("Enter");
 
   await expect(pageOne.locator("body")).toContainText("Same browser sync 1.");
   await expect(pageTwo.locator("body")).toContainText("Same browser sync 1.");
   await context.close();
+});
+
+test("enter from the Stories tab strip drops into rows on the New Story path", async ({
+  page,
+}) => {
+  await mockGeneration(page, "Keyboard story path");
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+
+  await page.keyboard.press("`");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".mode-bar-title")).toHaveText("TABS");
+  await expect(page.locator(".mode-bar-hint")).toContainText("↵/↓: ROWS");
+
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Stories" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".navbar-minibuffer")).toContainText("tabs");
+
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".mode-bar-title")).toHaveText("STORIES");
+  await expect(page.locator(".navbar-minibuffer")).toContainText("Sort");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".navbar-minibuffer")).toContainText("+ New Story");
 });
 
 test("stale v0 local-first storage does not block the current v1 app", async ({
@@ -110,13 +148,8 @@ test("stale v0 local-first storage does not block the current v1 app", async ({
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
-  await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("textile-lync-v1-index-id")),
-  ).toBeTruthy();
-  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject({
-    kind: "thread",
-  });
+  await waitForStoryIndex(page);
+  expect(referenceFromPageUrl(page)).toBeNull();
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Fresh storage 1.");
@@ -124,40 +157,54 @@ test("stale v0 local-first storage does not block the current v1 app", async ({
   await context.close();
 });
 
-test("browser URL follows the current loom and thread focus", async ({
+test("fresh load, story navigation, and story switching keep a clean local URL", async ({
   browser,
 }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await mockGeneration(page, "URL focus");
+  await captureClipboard(page);
+  await mockGeneration(page, "Clean URL");
 
   await page.goto("/");
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
-
-  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject({
-    kind: "thread",
-  });
-  const rootThreadRef = referenceFromPageUrl(page);
-  expect(rootThreadRef?.loomId).toBeTruthy();
-  expect(rootThreadRef?.turnId).toBeTruthy();
+  await waitForStoryIndex(page);
+  await expect(page).toHaveURL(/\/$/);
+  expect(referenceFromPageUrl(page)).toBeNull();
 
   await page.keyboard.press("Enter");
-  await expect(page.locator("body")).toContainText("URL focus 1.");
-  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject({
-    kind: "thread",
-    loomId: rootThreadRef?.loomId,
-  });
-  const firstThreadRef = referenceFromPageUrl(page);
-  expect(firstThreadRef?.turnId).not.toBe(rootThreadRef?.turnId);
-
+  await expect(page.locator("body")).toContainText("Clean URL 1.");
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("body")).toContainText("URL focus 2.");
-  await expect.poll(() => referenceFromPageUrl(page)?.turnId).not.toBe(
-    firstThreadRef?.turnId,
+  await expect(page.locator("body")).toContainText("Clean URL 2.");
+  await expect(page).toHaveURL(/\/$/);
+  expect(referenceFromPageUrl(page)).toBeNull();
+
+  await openStoriesDrawer(page);
+  await page.getByRole("button", { name: /New Story/ }).click();
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
   );
+  await expect(page).toHaveURL(/\/$/);
+  expect(referenceFromPageUrl(page)).toBeNull();
+
+  await openStoriesDrawer(page);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("body")).toContainText("Clean URL 1.");
+  await expect(page).toHaveURL(/\/$/);
+  expect(referenceFromPageUrl(page)).toBeNull();
+
+  await openStoriesDrawer(page);
+  await page
+    .getByRole("button", { name: "Copy current thread link" })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const threadUrl = await readCapturedClipboard(page);
+  expect(referenceFromUrl(threadUrl)).toMatchObject({ kind: "thread" });
+  await page.keyboard.press("Escape");
 
   await context.close();
 });
@@ -174,7 +221,7 @@ test("a copied story link opens the same loom in another browser context", async
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared root 1.");
   await openStoriesDrawer(page);
@@ -209,7 +256,7 @@ test("a copied story list link imports the shared index and listed looms", async
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared index 1.");
   await openStoriesDrawer(page);
@@ -243,7 +290,7 @@ test("a copied thread link opens the same loom and lands on the intended thread"
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared thread 1.");
   await page.keyboard.press("ArrowDown");
@@ -276,20 +323,25 @@ test("separate browser contexts converge on live updates after opening a shared 
 }) => {
   const owner = await browser.newContext();
   const page = await owner.newPage();
+  await captureClipboard(page);
   await mockGeneration(page, "Live shared thread");
 
   await page.goto("/");
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Live shared thread 1.");
   await page.keyboard.press("ArrowDown");
-  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject({
-    kind: "thread",
-  });
-  const threadUrl = page.url();
+  await openStoriesDrawer(page);
+  await page
+    .getByRole("button", { name: "Copy current thread link" })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const threadUrl = await readCapturedClipboard(page);
+  expect(referenceFromUrl(threadUrl)).toMatchObject({ kind: "thread" });
 
   const guest = await browser.newContext();
   const guestPage = await guest.newPage();
@@ -321,21 +373,25 @@ test("a copied thread link after root edit opens the new story loom", async ({
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Root edit share 1.");
-  const originalRef = referenceFromPageUrl(page);
-  const originalStoryUrl = page.url();
+  await openStoriesDrawer(page);
+  await page
+    .getByRole("button", { name: "Copy story link" })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const originalStoryUrl = await readCapturedClipboard(page);
+  const originalRef = referenceFromUrl(originalStoryUrl);
   expect(originalRef?.loomId).toBeTruthy();
+  await page.keyboard.press("Escape");
 
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Shared edited opening,");
   await page.getByRole("button", { name: "START" }).click();
   await expect(page.locator("body")).toContainText("Shared edited opening,");
   await expect(page.locator("body")).not.toContainText("Root edit share 1.");
-  await expect.poll(() => referenceFromPageUrl(page)?.loomId).not.toBe(
-    originalRef?.loomId,
-  );
 
   await openStoriesDrawer(page);
   await page
@@ -346,6 +402,7 @@ test("a copied thread link after root edit opens the new story loom", async ({
 
   const threadUrl = await readCapturedClipboard(page);
   expect(threadUrl).toContain("?ref=");
+  expect(referenceFromUrl(threadUrl)?.loomId).not.toBe(originalRef?.loomId);
 
   const guest = await browser.newContext();
   const guestPage = await guest.newPage();
@@ -382,7 +439,7 @@ test("editing a node with children creates one revision instead of duplicating i
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Editable child 1.");
@@ -405,19 +462,27 @@ test("editing the story root creates a new story without changing the original l
 }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
+  await captureClipboard(page);
   await mockGeneration(page, "Editable root");
 
   await page.goto("/");
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Editable root 1.");
-  const originalRef = referenceFromPageUrl(page);
-  const originalStoryUrl = page.url();
+  await openStoriesDrawer(page);
+  await page
+    .getByRole("button", { name: "Copy story link" })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const originalStoryUrl = await readCapturedClipboard(page);
+  const originalRef = referenceFromUrl(originalStoryUrl);
   expect(originalRef?.loomId).toBeTruthy();
+  await page.keyboard.press("Escape");
 
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Edited opening,");
@@ -425,9 +490,7 @@ test("editing the story root creates a new story without changing the original l
 
   await expect(page.locator("body")).toContainText("Edited opening,");
   await expect(page.locator("body")).not.toContainText("Editable root 1.");
-  await expect.poll(() => referenceFromPageUrl(page)?.loomId).not.toBe(
-    originalRef?.loomId,
-  );
+  expect(referenceFromPageUrl(page)).toBeNull();
 
   const threadText = await page.locator("body").innerText();
   const editedMatches = threadText.match(/Edited opening,/g) ?? [];
@@ -445,6 +508,47 @@ test("editing the story root creates a new story without changing the original l
   await context.close();
 });
 
+test("lore-backed story edits survive a browser reload", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await mockGeneration(page, "Reload persistence");
+
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(page);
+
+  await page.keyboard.press("Backspace");
+  await page.locator("textarea").fill("Reloaded edited opening,");
+  await page.getByRole("button", { name: "START" }).click();
+  await expect(page.locator("body")).toContainText(
+    "Reloaded edited opening,",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+
+  const editedStoryUrl = page.url();
+  expect(referenceFromPageUrl(page)).toBeNull();
+
+  await page.reload();
+
+  await expect(page).toHaveURL(editedStoryUrl);
+  await expect(page.locator("body")).toContainText(
+    "Reloaded edited opening,",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  expect(referenceFromPageUrl(page)).toBeNull();
+
+  await openStoriesDrawer(page);
+  await expect(page.locator("body")).toContainText("Story 1");
+
+  await context.close();
+});
+
 test("generating after a root edit branches from the new story only", async ({
   browser,
 }) => {
@@ -456,7 +560,7 @@ test("generating after a root edit branches from the new story only", async ({
   await expect(page.locator("body")).toContainText(
     "Once upon a time, in Absalom,",
   );
-  await waitForCurrentThreadRef(page);
+  await waitForStoryIndex(page);
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Root regen 1.");

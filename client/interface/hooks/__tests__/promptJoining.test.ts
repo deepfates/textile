@@ -1,7 +1,11 @@
 import { describe, it, expect } from "bun:test";
 import type { StoryNode } from "../../types";
 import { joinSegments, normalizeNextForSeam, joinPair } from "../../utils/join";
-import { createPrompt } from "../useStoryGeneration";
+import {
+  EMPTY_GENERATION_NOTICE_MESSAGE,
+  createPrompt,
+  getEmptyGenerationNotice,
+} from "../useStoryGeneration";
 
 describe("prompt concatenation", () => {
   it("preserves single spaces between nodes", () => {
@@ -89,6 +93,18 @@ describe("prompt concatenation", () => {
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Once upon");
+  });
+});
+
+describe("empty generation notices", () => {
+  it("classifies a completed generation with no content as a visible notice", () => {
+    expect(getEmptyGenerationNotice("")).toEqual({
+      message: EMPTY_GENERATION_NOTICE_MESSAGE,
+    });
+  });
+
+  it("does not classify normal generated text as empty", () => {
+    expect(getEmptyGenerationNotice("A continuation appears.")).toBeNull();
   });
 });
 

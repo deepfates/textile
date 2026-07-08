@@ -33,3 +33,11 @@ scripts/parity/shots/
 .data/
 test-results/
 playwright-report/
+
+# fleet process artifacts, never committed (tracked in the fleet ledger instead)
+/REPORT.md
+/REPORT-*.md
+/VERDICT.md
+/VERDICT-*.md
+/.tickets/
+/FRESHREAD*.md

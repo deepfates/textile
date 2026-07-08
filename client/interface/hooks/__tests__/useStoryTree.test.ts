@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { loomRef } from "../../../../vendor/lync/packages/core/src/references";
-import { createTestLoomClient } from "../../../../vendor/lync/packages/client/src/testing";
-import { textStoryLoomMeta } from "../../../../vendor/lync/packages/core/src/profiles/text-story";
+import { loomRef, type LoomReference } from "@lync/core";
+import { createTestLoomClient } from "@lync/client/testing";
+import { textStoryLoomMeta } from "@lync/core/profiles/text-story";
 import {
+  chooseInitialStoryKey,
   INITIAL_STORY,
   loadReachableStoryEntries,
 } from "../useStoryTree";
@@ -14,6 +15,9 @@ import type {
 } from "../../lync/storyTypes";
 
 describe("loadReachableStoryEntries", () => {
+  type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
+  const testLoomRef = (loomId: string) => loomRef(loomId) as LoomOnlyReference;
+
   it("skips unreachable index entries while keeping reachable stories", async () => {
     let nextId = 0;
     const client = createTestLoomClient<
@@ -35,12 +39,12 @@ describe("loadReachableStoryEntries", () => {
     const loaded = await loadReachableStoryEntries(
       [
         {
-          ref: loomRef("memory:missing"),
+          ref: testLoomRef("memory:missing"),
           title: "Broken story",
           addedAt: 1,
         },
         {
-          ref: loomRef(info.id),
+          ref: testLoomRef(info.id),
           title: "Reachable listing",
           addedAt: 2,
         },
@@ -57,5 +61,45 @@ describe("loadReachableStoryEntries", () => {
     expect(loaded.trees[info.id].root.text).toBe("Reachable opening");
 
     await client.close();
+  });
+});
+
+describe("chooseInitialStoryKey", () => {
+  const loaded = {
+    orderedIds: ["story-a", "story-b"],
+    trees: {
+      "story-a": { root: { id: "a", text: "A", continuations: [] } },
+      "story-b": { root: { id: "b", text: "B", continuations: [] } },
+    },
+  };
+
+  it("boots the most recently active story instead of index order", () => {
+    expect(
+      chooseInitialStoryKey(loaded, null, null, {
+        "story-a": {
+          key: "story-a",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-02T00:00:00.000Z",
+        },
+        "story-b": {
+          key: "story-b",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-05T00:00:00.000Z",
+          openCount: 3,
+        },
+      }),
+    ).toBe("story-b");
+  });
+
+  it("keeps explicit focus above metadata recency", () => {
+    expect(
+      chooseInitialStoryKey(loaded, null, "story-a", {
+        "story-b": {
+          key: "story-b",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          lastActiveAt: "2026-07-05T00:00:00.000Z",
+        },
+      }),
+    ).toBe("story-a");
   });
 });

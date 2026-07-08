@@ -1,13 +1,13 @@
 import type http from "http";
 import path from "path";
 import {
-  attachLyncServer as attachVendoredLyncServer,
+  attachLyncServer as attachLyncRelay,
   type AttachLyncServerOptions,
-} from "../vendor/lync/packages/sync-server/src/index";
+} from "@lync/sync-server";
 import { hasSiteAccess } from "./siteAuth";
 
 let attached = false;
-let relay: ReturnType<typeof attachVendoredLyncServer> | null = null;
+let relay: ReturnType<typeof attachLyncRelay> | null = null;
 const DEFAULT_LYNC_KEEPALIVE_INTERVAL_MS = 30_000;
 type LyncAuthMode = "site-access" | "public";
 
@@ -36,7 +36,7 @@ export function attachLyncServer(server: http.Server) {
     maxConnections: parsePositiveInt(process.env.LYNC_MAX_CONNECTIONS),
     authenticate: authMode === "public" ? undefined : hasSiteAccess,
   };
-  relay = attachVendoredLyncServer(server, options);
+  relay = attachLyncRelay(server, options);
   console.log(`[Lync] relay auth mode: ${authMode}`);
 
   server.on("upgrade", (request) => {

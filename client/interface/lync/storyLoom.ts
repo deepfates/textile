@@ -1,5 +1,5 @@
-import { assertTextStoryTurn } from "../../../vendor/lync/packages/core/src/profiles/text-story";
-import type { Turn } from "../../../vendor/lync/packages/core/src/types";
+import { assertTextStoryTurn } from "@lync/core/profiles/text-story";
+import type { Turn } from "@lync/core";
 import type { StoryNode } from "../types";
 import type {
   StoryDraft,
@@ -15,9 +15,9 @@ export async function projectStoryTree(
   fallbackRootText = "",
 ): Promise<{ root: StoryNode }> {
   const rootTurns = await loom.childrenOf(null);
-  // Textile stories are single-root projections. Editing the visible root
-  // creates a new loom, so later top-level turns are not treated as root edits.
-  const rootTurn = rootTurns[0];
+  // Textile stories are single-root projections. Later top-level revision
+  // turns edit the seed root's visible text without reparenting its children.
+  const rootTurn = rootTurns.find((turn) => turn.meta?.role !== "revision");
   if (!rootTurn) {
     return {
       root: {
@@ -29,6 +29,14 @@ export async function projectStoryTree(
   }
 
   const rootNode: StoryNode = turnToStoryNode(rootTurn);
+  const rootRevisions = rootTurns.filter(
+    (turn) => turn.meta?.role === "revision" && turn.meta.revises === rootTurn.id,
+  );
+  const latestRootRevision = rootRevisions.at(-1);
+  if (latestRootRevision) {
+    assertTextStoryTurn(latestRootRevision);
+    rootNode.text = latestRootRevision.payload.text;
+  }
 
   const appendChildren = async (
     parent: StoryNode,
@@ -69,7 +77,16 @@ export async function appendStoryRevision(
   revises?: string,
 ): Promise<Turn<StoryTurnPayload, StoryTurnMeta>> {
   if (parentId === null) {
-    throw new Error("Root edits create a new story loom");
+    const appended = await loom.appendTurn(null, { text: revision.text }, {
+      role: "revision",
+      revises,
+    });
+    if (revises) {
+      for (const child of revision.continuations ?? []) {
+        await appendStoryDraftChain(loom, revises, child, { role: "prose" });
+      }
+    }
+    return appended;
   }
   return appendStoryDraftChain(loom, parentId, revision, {
     role: "revision",

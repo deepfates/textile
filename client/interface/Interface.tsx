@@ -5,13 +5,15 @@ import { useMenuSystem } from "./hooks/useMenuSystem";
 import { useStoryTree } from "./hooks/useStoryTree";
 import { useOfflineStatus } from "./hooks/useOfflineStatus";
 import { useScrollSync } from "./hooks/useScrollSync";
-import { useModels } from "./hooks/useModels";
+import { useModelCatalog } from "./hooks/useModelCatalog";
+import { useResponsiveGamepadLayout } from "./hooks/useResponsiveGamepadLayout";
 
 import { DPad } from "./components/DPad";
 import { GamepadButton } from "./components/GamepadButton";
 import { MenuButton } from "./components/MenuButton";
 import { MenuScreen } from "./components/MenuScreen";
 import { NavigationDots } from "./components/NavigationDots";
+import { StoryText } from "./components/StoryText";
 import { StoryMinimap } from "./components/StoryMinimap";
 import { useTheme, THEME_PRESETS } from "./components/ThemeToggle";
 import type {
@@ -21,8 +23,6 @@ import type {
 } from "./components/ThemeToggle";
 import {
   ModelEditor,
-  type ModelFormState,
-  type ModelEditorField,
 } from "./components/ModelEditor";
 
 import { SettingsMenu } from "./menus/SettingsMenu";
@@ -39,8 +39,8 @@ import {
   scrollMenuItemElIntoView,
 } from "./utils/scrolling";
 
-import type { ModelSortOption, DrawerTab } from "./types";
-import type { ModelId, ModelConfig } from "../../shared/models";
+import type { DrawerTab } from "./types";
+import type { ModelId } from "../../shared/models";
 import {
   orderKeysReverseChronological,
   orderKeysByStorySort,
@@ -61,8 +61,11 @@ import {
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
   getStoryIndex,
-  replaceStoryFocusUrl,
+  getLyncSyncSnapshot,
+  subscribeLyncSyncStatus,
+  type LyncSyncSnapshot,
 } from "./lync/storyRuntime";
+import { getRegisteredMode } from "./modes/modeRegistry";
 
 const DEFAULT_PARAMS = {
   temperature: 1.0,
@@ -87,15 +90,40 @@ const SETTINGS_ROW_LABELS = [
   "Font",
 ];
 
-const createEmptyModelForm = (): ModelFormState => ({
-  id: "" as ModelId | "",
-  name: "",
-  maxTokens: 1024,
-  defaultTemp: 0.7,
-});
+function useLyncSyncIndicator(): LyncSyncSnapshot {
+  const [status, setStatus] = useState(() => getLyncSyncSnapshot());
+
+  useEffect(() => {
+    const update = () => setStatus(getLyncSyncSnapshot());
+    const unsubscribe = subscribeLyncSyncStatus(update);
+    update();
+    return unsubscribe;
+  }, []);
+
+  return status;
+}
+
+function LyncSyncIndicator({ status }: { status: LyncSyncSnapshot }) {
+  const label =
+    status.state === "connected"
+      ? "Lync connected"
+      : status.state === "reconnecting"
+        ? "Lync reconnecting"
+        : "Lync local-only";
+  return (
+    <span
+      className={`lync-sync-status lync-sync-status--${status.state}`}
+      aria-label={label}
+      title={status.detail}
+    >
+      {label}
+    </span>
+  );
+}
 
 export const GamepadInterface = () => {
   const { isOnline, isOffline, wasOffline } = useOfflineStatus();
+  const lyncSyncStatus = useLyncSyncIndicator();
   const {
     themeMode,
     setThemeMode,
@@ -108,6 +136,9 @@ export const GamepadInterface = () => {
     availableFonts,
   } = useTheme();
   const [lastMapNodeId, setLastMapNodeId] = useState<string | null>(null);
+  const [bonkDirection, setBonkDirection] = useState<
+    "up" | "right" | "down" | "left" | null
+  >(null);
 
   // (select menu navigation now handled in useMenuSystem)
 
@@ -156,29 +187,44 @@ export const GamepadInterface = () => {
   }, [setExpandedModel, setScreen]);
 
 
+  const [storySort, setStorySort] = useState<StorySortOption>("recent");
   const {
     models,
-    loading: modelsLoading,
-    error: modelsError,
-    saving: modelsSaving,
-    createModel,
-    updateModel,
-    deleteModel,
+    modelsLoading,
+    modelsError,
+    modelsSaving,
     getModelName,
-  } = useModels();
-
-  const [modelSort, setModelSort] = useState<ModelSortOption>("name-asc");
-  const [storySort, setStorySort] = useState<StorySortOption>("recent");
-  const [modelForm, setModelForm] = useState<ModelFormState>(() =>
-    createEmptyModelForm()
-  );
-  const [modelEditorMode, setModelEditorMode] = useState<"create" | "edit">(
-    "create"
-  );
-  const [editingModelId, setEditingModelId] = useState<ModelId | null>(null);
-  const [modelFormError, setModelFormError] = useState<string | null>(null);
-  const [pendingModelSelection, setPendingModelSelection] =
-    useState<ModelId | null>(null);
+    modelSort,
+    sortedModelEntries,
+    modelOrder,
+    modelForm,
+    modelEditorMode,
+    editingModelId,
+    modelFormError,
+    modelEditorFields,
+    currentModelEditorField,
+    cycleModelSort,
+    handleModelFormChange,
+    handleStartNewModel,
+    handleEditModel,
+    handleCancelModelEdit,
+    handleDeleteModel,
+    handleSubmitModel,
+    handleModelEditorHighlight,
+    handleModelEditorActivate,
+    navigateModelsList,
+    navigateModelEditor,
+  } = useModelCatalog({
+    currentModelId: menuParams.model,
+    setMenuParams,
+    setScreen,
+    setDrawerTab,
+    setExpandedModel,
+    selectedModelIndex,
+    setSelectedModelIndex,
+    selectedModelField,
+    setSelectedModelField,
+  });
 
   const {
     trees,
@@ -190,6 +236,7 @@ export const GamepadInterface = () => {
     generatingInfo,
     isGeneratingAt,
     isAnyGenerating,
+    emptyGeneration,
     error,
     handleStoryNavigation,
     setCurrentLoomId,
@@ -209,43 +256,6 @@ export const GamepadInterface = () => {
     [trees, storySort]
   );
   // Use orderedKeys directly where needed; no reordered trees object required
-
-  const sortedModelEntries = useMemo(() => {
-    if (!models) return [] as Array<[ModelId, ModelConfig]>;
-    const entries = Object.entries(models) as Array<[ModelId, ModelConfig]>;
-    const sorted = [...entries].sort((a, b) => {
-      const nameA = a[1].name.toLowerCase();
-      const nameB = b[1].name.toLowerCase();
-      const compare = nameA.localeCompare(nameB);
-      return modelSort === "name-desc" ? -compare : compare;
-    });
-    return sorted;
-  }, [models, modelSort]);
-
-  const modelOrder = useMemo(
-    () => sortedModelEntries.map(([modelId]) => modelId),
-    [sortedModelEntries]
-  );
-
-  const modelEditorFields = useMemo<ModelEditorField[]>(() => {
-    const base: ModelEditorField[] = [
-      "id",
-      "name",
-      "maxTokens",
-      "defaultTemp",
-      "save",
-      "cancel",
-    ];
-
-    if (modelEditorMode === "edit") {
-      return [...base, "delete"];
-    }
-
-    return base;
-  }, [modelEditorMode]);
-
-  const currentModelEditorField =
-    modelEditorFields[selectedModelField] ?? modelEditorFields[0] ?? "id";
 
   // On first load, default to the most recently active story (if any)
   const hasAppliedDefault = useRef(false);
@@ -277,12 +287,6 @@ export const GamepadInterface = () => {
     }
     return node;
   }, [storyTree, currentDepth, selectedOptions]);
-
-  useEffect(() => {
-    if (!currentLoomReady) return;
-    const turnId = getCurrentPath().at(-1)?.id ?? null;
-    replaceStoryFocusUrl(currentLoomId, turnId);
-  }, [currentLoomReady, currentLoomId, getCurrentPath]);
 
   const storyTextRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion =
@@ -388,452 +392,9 @@ export const GamepadInterface = () => {
     [setSelectedTreeIndex, setSelectedTreeColumn]
   );
 
-  const cycleModelSort = useCallback((_delta: -1 | 1 = 1) => {
-    setModelSort((prev) => {
-      if (prev === "name-asc") {
-        return "name-desc";
-      }
-      return "name-asc";
-    });
-  }, []);
-
   const cycleStorySort = useCallback((_delta: -1 | 1 = 1) => {
     setStorySort((prev) => (prev === "recent" ? "oldest" : "recent"));
   }, []);
-
-  const handleModelFormChange = useCallback(
-    <Key extends keyof ModelFormState>(
-      field: Key,
-      value: ModelFormState[Key]
-    ) => {
-      setModelForm((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
-    },
-    []
-  );
-
-  const handleStartNewModel = useCallback(() => {
-    setModelEditorMode("create");
-    setEditingModelId(null);
-    setModelForm(createEmptyModelForm());
-    setModelFormError(null);
-    setSelectedModelField(0);
-    setScreen("drawer");
-    setDrawerTab("models");
-    setExpandedModel("__new__");
-  }, [setDrawerTab, setExpandedModel, setScreen, setSelectedModelField]);
-
-  const handleEditModel = useCallback(
-    (modelId: ModelId) => {
-      const config = models?.[modelId];
-      if (!config) return;
-      setModelEditorMode("edit");
-      setEditingModelId(modelId);
-      setModelForm({
-        id: modelId,
-        name: config.name,
-        maxTokens: config.maxTokens,
-        defaultTemp: config.defaultTemp,
-      });
-      setModelFormError(null);
-      setSelectedModelField(0);
-      setScreen("drawer");
-      setDrawerTab("models");
-      setExpandedModel(modelId);
-    },
-    [models, setDrawerTab, setExpandedModel, setScreen, setSelectedModelField]
-  );
-
-  const showModelsMenu = useCallback(
-    (focusModelId?: ModelId | null) => {
-      const targetId =
-        focusModelId ??
-        (models && models[menuParams.model] ? menuParams.model : modelOrder[0]);
-      if (targetId) {
-        const index = modelOrder.indexOf(targetId);
-        if (index >= 0) {
-          setSelectedModelIndex(index + 2);
-        }
-      } else {
-        setSelectedModelIndex(1);
-      }
-      setModelFormError(null);
-      setScreen("drawer");
-      setDrawerTab("models");
-      setExpandedModel(null);
-    },
-    [
-      menuParams.model,
-      modelOrder,
-      models,
-      setDrawerTab,
-      setExpandedModel,
-      setScreen,
-      setSelectedModelIndex,
-    ]
-  );
-
-  const handleCancelModelEdit = useCallback(() => {
-    if (
-      modelEditorMode === "edit" &&
-      editingModelId &&
-      models?.[editingModelId]
-    ) {
-      const config = models[editingModelId];
-      setModelForm({
-        id: editingModelId,
-        name: config.name,
-        maxTokens: config.maxTokens,
-        defaultTemp: config.defaultTemp,
-      });
-    } else {
-      setModelForm(createEmptyModelForm());
-      setEditingModelId(null);
-      setModelEditorMode("create");
-    }
-    setModelFormError(null);
-    showModelsMenu(editingModelId);
-  }, [editingModelId, modelEditorMode, models, showModelsMenu]);
-
-  const handleModelEditorHighlight = useCallback(
-    (field: ModelEditorField) => {
-      const index = modelEditorFields.indexOf(field);
-      if (index >= 0) {
-        setSelectedModelField(index);
-      }
-    },
-    [modelEditorFields, setSelectedModelField]
-  );
-
-  const handleDeleteModel = useCallback(
-    async (modelId: ModelId) => {
-      const totalModels = models ? Object.keys(models).length : 0;
-      if (totalModels <= 1) {
-        setModelFormError("At least one model must remain.");
-        return;
-      }
-
-      const modelName = models?.[modelId]?.name ?? modelId;
-      if (!window.confirm(`Delete model "${modelName}"?`)) {
-        return;
-      }
-
-      try {
-        const updated = await deleteModel(modelId);
-        setModelFormError(null);
-
-        if (menuParams.model === modelId) {
-          const remainingIds = Object.keys(updated) as ModelId[];
-          if (remainingIds.length > 0) {
-            setMenuParams((prev) => ({ ...prev, model: remainingIds[0] }));
-          }
-        }
-
-        if (editingModelId === modelId) {
-          const remainingEntries = Object.entries(updated) as Array<
-            [ModelId, ModelConfig]
-          >;
-          if (remainingEntries.length > 0) {
-            const [firstId, config] = remainingEntries[0];
-            setEditingModelId(firstId);
-            setModelEditorMode("edit");
-            setModelForm({
-              id: firstId,
-              name: config.name,
-              maxTokens: config.maxTokens,
-              defaultTemp: config.defaultTemp,
-            });
-            setPendingModelSelection(firstId);
-            setSelectedModelField(0);
-          } else {
-            setEditingModelId(null);
-            setModelEditorMode("create");
-            setModelForm(createEmptyModelForm());
-            setSelectedModelField(0);
-          }
-        }
-      } catch (err) {
-        setModelFormError(
-          err instanceof Error ? err.message : "Failed to delete model"
-        );
-      }
-    },
-    [
-      deleteModel,
-      editingModelId,
-      menuParams.model,
-      models,
-      setMenuParams,
-      setPendingModelSelection,
-    ]
-  );
-
-  const handleSubmitModel = useCallback(async () => {
-    const trimmedId = `${modelForm.id ?? ""}`.trim();
-    const trimmedName = modelForm.name.trim();
-    if (!trimmedId) {
-      setModelFormError("Model ID is required.");
-      return;
-    }
-    if (!trimmedName) {
-      setModelFormError("Model name is required.");
-      return;
-    }
-    if (!Number.isFinite(modelForm.maxTokens) || modelForm.maxTokens <= 0) {
-      setModelFormError("Max tokens must be greater than 0.");
-      return;
-    }
-    if (
-      Number.isNaN(modelForm.defaultTemp) ||
-      modelForm.defaultTemp < 0 ||
-      modelForm.defaultTemp > 2
-    ) {
-      setModelFormError("Default temperature must be between 0 and 2.");
-      return;
-    }
-
-    try {
-      let nextFocusId: ModelId | null = null;
-      if (modelEditorMode === "create") {
-        const newId = trimmedId as ModelId;
-        await createModel(newId, {
-          name: trimmedName,
-          maxTokens: modelForm.maxTokens,
-          defaultTemp: modelForm.defaultTemp,
-        });
-        setModelEditorMode("edit");
-        setEditingModelId(newId);
-        setModelForm({
-          id: newId,
-          name: trimmedName,
-          maxTokens: modelForm.maxTokens,
-          defaultTemp: modelForm.defaultTemp,
-        });
-        setPendingModelSelection(newId);
-        setMenuParams((prev) => ({ ...prev, model: newId }));
-        nextFocusId = newId;
-      } else if (editingModelId) {
-        await updateModel(editingModelId, {
-          name: trimmedName,
-          maxTokens: modelForm.maxTokens,
-          defaultTemp: modelForm.defaultTemp,
-        });
-        setModelForm({
-          id: editingModelId,
-          name: trimmedName,
-          maxTokens: modelForm.maxTokens,
-          defaultTemp: modelForm.defaultTemp,
-        });
-        setPendingModelSelection(editingModelId);
-        nextFocusId = editingModelId;
-      }
-      setModelFormError(null);
-      showModelsMenu(nextFocusId);
-    } catch (err) {
-      setModelFormError(
-        err instanceof Error ? err.message : "Failed to save model"
-      );
-    }
-  }, [
-    createModel,
-    updateModel,
-    modelEditorMode,
-    modelForm,
-    editingModelId,
-    setMenuParams,
-    showModelsMenu,
-  ]);
-
-  const handleModelEditorAdjust = useCallback(
-    (field: ModelEditorField, delta: number) => {
-      if (field === "maxTokens") {
-        setModelForm((prev) => {
-          const next = Math.max(1, prev.maxTokens + delta * 64);
-          return {
-            ...prev,
-            maxTokens: next,
-          };
-        });
-        setModelFormError(null);
-      } else if (field === "defaultTemp") {
-        setModelForm((prev) => {
-          const next = Math.max(
-            0,
-            Math.min(2, Number((prev.defaultTemp + delta * 0.1).toFixed(1)))
-          );
-          return {
-            ...prev,
-            defaultTemp: next,
-          };
-        });
-        setModelFormError(null);
-      }
-    },
-    []
-  );
-
-  const handleModelEditorActivate = useCallback(
-    (field: ModelEditorField) => {
-      switch (field) {
-        case "id": {
-          if (modelEditorMode === "edit") {
-            return;
-          }
-          const input = window.prompt(
-            "Model ID",
-            `${modelForm.id ?? "provider/model"}`.trim()
-          );
-          if (input === null) return;
-          const trimmed = input.trim();
-          setModelForm((prev) => ({
-            ...prev,
-            id: (trimmed as ModelId | "") ?? ("" as ModelId | ""),
-          }));
-          setModelFormError(null);
-          break;
-        }
-        case "name": {
-          const input = window.prompt("Display Name", modelForm.name.trim());
-          if (input === null) return;
-          const trimmed = input.trim();
-          setModelForm((prev) => ({
-            ...prev,
-            name: trimmed,
-          }));
-          setModelFormError(null);
-          break;
-        }
-        case "maxTokens": {
-          const input = window.prompt("Max Tokens", `${modelForm.maxTokens}`);
-          if (input === null) return;
-          const parsed = Number.parseInt(input, 10);
-          if (!Number.isNaN(parsed) && parsed > 0) {
-            setModelForm((prev) => ({
-              ...prev,
-              maxTokens: parsed,
-            }));
-            setModelFormError(null);
-          } else {
-            setModelFormError("Max tokens must be a positive number.");
-          }
-          break;
-        }
-        case "defaultTemp": {
-          const input = window.prompt(
-            "Default Temperature",
-            modelForm.defaultTemp.toFixed(1)
-          );
-          if (input === null) return;
-          const parsed = Number.parseFloat(input);
-          if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 2) {
-            const rounded = Number(parsed.toFixed(1));
-            setModelForm((prev) => ({
-              ...prev,
-              defaultTemp: rounded,
-            }));
-            setModelFormError(null);
-          } else {
-            setModelFormError("Temperature must be between 0 and 2.");
-          }
-          break;
-        }
-        case "save": {
-          void handleSubmitModel();
-          break;
-        }
-        case "cancel": {
-          handleCancelModelEdit();
-          break;
-        }
-        case "delete": {
-          if (editingModelId) {
-            void handleDeleteModel(editingModelId);
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    },
-    [
-      editingModelId,
-      handleCancelModelEdit,
-      handleDeleteModel,
-      handleSubmitModel,
-      modelEditorMode,
-      modelForm.defaultTemp,
-      modelForm.id,
-      modelForm.maxTokens,
-      modelForm.name,
-      setModelForm,
-    ]
-  );
-
-  useEffect(() => {
-    const total = modelOrder.length + 2;
-    setSelectedModelIndex((prev) => {
-      const maxIndex = Math.max(0, total - 1);
-      return prev > maxIndex ? maxIndex : prev;
-    });
-  }, [modelOrder, setSelectedModelIndex]);
-
-  useEffect(() => {
-    if (selectedModelField >= modelEditorFields.length) {
-      setSelectedModelField(0);
-    }
-  }, [modelEditorFields, selectedModelField, setSelectedModelField]);
-
-  useEffect(() => {
-    if (!pendingModelSelection) return;
-    const index = modelOrder.indexOf(pendingModelSelection);
-    if (index >= 0) {
-      setSelectedModelIndex(index + 2);
-    }
-    setPendingModelSelection(null);
-  }, [modelOrder, pendingModelSelection, setSelectedModelIndex]);
-
-  useEffect(() => {
-    if (!editingModelId) return;
-    const index = modelOrder.indexOf(editingModelId);
-    if (index >= 0) {
-      setSelectedModelIndex((prev) => (prev === index + 2 ? prev : index + 2));
-    }
-  }, [editingModelId, modelOrder, setSelectedModelIndex]);
-
-  useEffect(() => {
-    if (!models) return;
-    if (editingModelId && !models[editingModelId]) {
-      const fallbackId = modelOrder[0];
-      if (fallbackId) {
-        handleEditModel(fallbackId);
-        const index = modelOrder.indexOf(fallbackId);
-        if (index >= 0) {
-          setSelectedModelIndex(index + 2);
-        }
-      } else {
-        handleStartNewModel();
-      }
-    }
-  }, [
-    editingModelId,
-    handleEditModel,
-    handleStartNewModel,
-    modelOrder,
-    models,
-    setSelectedModelIndex,
-  ]);
-
-  useEffect(() => {
-    if (!models) return;
-    if (!models[menuParams.model]) {
-      const fallbackId = modelOrder[0];
-      if (fallbackId) {
-        setMenuParams((prev) => ({ ...prev, model: fallbackId }));
-      }
-    }
-  }, [models, menuParams.model, modelOrder, setMenuParams]);
 
   // Per-tab navigators — each consumes a key and mutates the cursor / values
   // for its own tab.  Factored out so handleControlAction stays a clean
@@ -1083,99 +644,24 @@ export const GamepadInterface = () => {
     ]
   );
 
-  const navigateModelsList = useCallback(
-    (key: string) => {
-      const baseOffset = 2; // sort row + new model row
-      const totalItems = modelOrder.length + baseOffset;
-      switch (key) {
-        case "ArrowUp":
-        case "ArrowDown": {
-          const delta = key === "ArrowUp" ? -1 : 1;
-          setSelectedModelIndex((prev) => {
-            const n = (prev + delta + totalItems) % totalItems;
-            scrollCurrentMenuItemIntoView(n);
-            return n;
-          });
-          return;
-        }
-        case "ArrowLeft":
-          if (selectedModelIndex === 0) cycleModelSort(-1);
-          return;
-        case "ArrowRight":
-          if (selectedModelIndex === 0) cycleModelSort(1);
-          return;
-        case "Enter": {
-          if (selectedModelIndex === 0) {
-            cycleModelSort(1);
-          } else if (selectedModelIndex === 1) {
-            handleStartNewModel();
-          } else {
-            const modelId = modelOrder[selectedModelIndex - baseOffset];
-            if (modelId) handleEditModel(modelId);
-          }
-          return;
-        }
-        case "Backspace": {
-          if (selectedModelIndex >= baseOffset) {
-            const modelId = modelOrder[selectedModelIndex - baseOffset];
-            if (modelId) void handleDeleteModel(modelId);
-          }
-          return;
-        }
-      }
-    },
-    [
-      cycleModelSort,
-      handleDeleteModel,
-      handleEditModel,
-      handleStartNewModel,
-      modelOrder,
-      scrollCurrentMenuItemIntoView,
-      selectedModelIndex,
-      setSelectedModelIndex,
-    ]
-  );
-
-  const navigateModelEditor = useCallback(
-    (key: string) => {
-      const fields = modelEditorFields;
-      const total = fields.length;
-      if (!total) return;
-      switch (key) {
-        case "ArrowUp":
-        case "ArrowDown": {
-          const delta = key === "ArrowUp" ? -1 : 1;
-          setSelectedModelField((prev) => {
-            const n = (prev + delta + total) % total;
-            handleModelEditorHighlight(fields[n]);
-            return n;
-          });
-          return;
-        }
-        case "ArrowLeft":
-          handleModelEditorAdjust(fields[selectedModelField], -1);
-          return;
-        case "ArrowRight":
-          handleModelEditorAdjust(fields[selectedModelField], 1);
-          return;
-        case "Enter":
-          handleModelEditorActivate(fields[selectedModelField]);
-          return;
-        case "Backspace":
-          handleCancelModelEdit();
-          return;
-      }
-    },
-    [
-      handleCancelModelEdit,
-      handleModelEditorActivate,
-      handleModelEditorAdjust,
-      handleModelEditorHighlight,
-      modelEditorFields,
-      selectedModelField,
-      setSelectedModelField,
-    ]
-  );
+  const triggerBonk = useCallback((key: string) => {
+    const direction =
+      key === "ArrowUp"
+        ? "up"
+        : key === "ArrowRight"
+          ? "right"
+          : key === "ArrowDown"
+            ? "down"
+            : key === "ArrowLeft"
+              ? "left"
+              : null;
+    if (!direction) return;
+    setBonkDirection(null);
+    window.setTimeout(() => setBonkDirection(direction), 0);
+    window.setTimeout(() => {
+      setBonkDirection((current) => (current === direction ? null : current));
+    }, 180);
+  }, []);
 
   const handleControlAction = useCallback(
     async (key: string) => {
@@ -1258,7 +744,7 @@ export const GamepadInterface = () => {
           return;
         }
         if (drawerTab === "models") {
-          navigateModelsList(key);
+          navigateModelsList(key, scrollCurrentMenuItemIntoView);
           return;
         }
         return;
@@ -1298,7 +784,9 @@ export const GamepadInterface = () => {
           });
           return;
         }
-        await handleStoryNavigation(key);
+        if (!(await handleStoryNavigation(key))) {
+          triggerBonk(key);
+        }
         return;
       }
 
@@ -1315,7 +803,9 @@ export const GamepadInterface = () => {
         setScreen("edit");
         return;
       }
-      await handleStoryNavigation(key);
+      if (!(await handleStoryNavigation(key))) {
+        triggerBonk(key);
+      }
     },
     [
       closeDrawer,
@@ -1342,39 +832,15 @@ export const GamepadInterface = () => {
       setScreen,
       setSelectedTreeColumn,
       setSelectedTreeIndex,
+      triggerBonk,
     ]
   );
 
   const { activeControls, handleControlPress, handleControlRelease } =
     useKeyboardControls(handleControlAction);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [layout, setLayout] = useState<"portrait" | "landscape">("portrait");
-
-  useEffect(() => {
-    const checkLayout = () => {
-      if (containerRef.current) {
-        const { clientWidth, clientHeight } = containerRef.current;
-        const aspectRatio = clientWidth / clientHeight;
-        setLayout(aspectRatio >= 1.33 ? "landscape" : "portrait");
-      }
-    };
-
-    // Use ResizeObserver for more efficient layout checks
-    const resizeObserver = new ResizeObserver(checkLayout);
-    const currentContainer = containerRef.current;
-
-    if (currentContainer) {
-      resizeObserver.observe(currentContainer);
-      checkLayout(); // Initial check
-    }
-
-    return () => {
-      if (currentContainer) {
-        resizeObserver.unobserve(currentContainer);
-      }
-    };
-  }, []);
+  const { containerRef, layout, portraitPhoneHeight } =
+    useResponsiveGamepadLayout();
 
   // Helper: scroll a specific rendered node into view within the story container
   const scrollNodeIntoView = useCallback(
@@ -1456,121 +922,35 @@ export const GamepadInterface = () => {
 
   // Removed LOOM scroll preservation to keep behavior simple and reliable
 
-  const renderStoryText = () => {
-    const currentPath = getCurrentPath();
-
-    return (
-      <div ref={storyTextRef} className="story-text">
-        {currentPath.map((segment, index) => {
-          const isCurrentDepth = index === currentDepth;
-          const isNextDepth = index === currentDepth + 1;
-          const isLoading = isGeneratingAt(segment.id);
-
-          // Four coloration tiers, graded by distance from the cursor so the
-          // eye lands on the highlighted continuation first but the whole
-          // thread stays readable:
-          //
-          //   cursor-node  (D+1) — primary fill on inverted text; matches the
-          //                        minimap's "selected" node exactly.  Styled
-          //                        by .cursor-node in terminal.css.
-          //   parent       (D)   — fullest normal text.
-          //   ancestors    (<D)  — slightly less intense.
-          //   descendants  (>D+1)— dimmest tier; will change if you regenerate
-          //                        or move siblings.
-          const spanClasses = ["story-node"];
-          if (isNextDepth) {
-            spanClasses.push("cursor-node");
-          } else if (isCurrentDepth) {
-            spanClasses.push("text-theme-text");
-          } else if (index < currentDepth) {
-            spanClasses.push("text-theme-text", "opacity-80");
-          } else {
-            spanClasses.push("text-theme-text", "opacity-55");
-          }
-          if (isLoading) {
-            spanClasses.push("opacity-50");
-          }
-
-          // On the cursor span only, peel off trailing whitespace/newlines
-          // so the pill hugs the last word rather than extending past
-          // the paragraph.  The stripped whitespace still renders
-          // inline so the next span's text starts correctly.
-          if (isNextDepth) {
-            const match = segment.text.match(/^([\s\S]*?)(\s*)$/);
-            const body = match?.[1] ?? segment.text;
-            const tail = match?.[2] ?? "";
-            return (
-              <span key={segment.id} data-node-id={segment.id}>
-                <span className={spanClasses.join(" ")}>{body}</span>
-                {tail}
-              </span>
-            );
-          }
-          return (
-            <span
-              key={segment.id}
-              data-node-id={segment.id}
-              className={spanClasses.join(" ")}
-            >
-              {segment.text}
-            </span>
-          );
-        })}
-      </div>
-    );
-  };
+  const currentMode = getRegisteredMode({
+    screen,
+    projection,
+    drawerTab,
+    cursorOnTabs,
+    editingModel:
+      screen === "drawer" && drawerTab === "models" && expandedModel !== null,
+  });
 
   return (
     <main
       className="gamepad-main bg-theme-bg text-theme-text font-mono"
       aria-label="Story Interface"
+      data-story-ready={currentLoomReady ? "true" : "false"}
     >
       <InstallPrompt />
       <div
         ref={containerRef}
         className={`gamepad-container ${
           layout === "landscape" ? "landscape" : "portrait"
-        }`}
+        }${portraitPhoneHeight ? ` phone-height-${portraitPhoneHeight}` : ""}`}
       >
         {/* Screen area */}
-        <section className="terminal-screen" aria-label="Story Display">
+        <section
+          className={`terminal-screen${bonkDirection ? ` nav-bonk nav-bonk-${bonkDirection}` : ""}`}
+          aria-label="Story Display"
+        >
           {/* Unified top mode bar */}
-          {(() => {
-            const inModelEditor =
-              screen === "drawer" &&
-              drawerTab === "models" &&
-              expandedModel !== null;
-            let title = "";
-            let hint = "";
-            if (screen === "edit") {
-              title = "EDIT";
-              hint = "START: SAVE • SELECT: CANCEL";
-            } else if (inModelEditor) {
-              title = "EDIT MODEL";
-              hint = "↵: EDIT FIELD • ⌫: BACK • START: SAVE";
-            } else if (screen === "drawer") {
-              if (cursorOnTabs) {
-                title = "TABS";
-                hint = "◄►: TAB • ↓: ROWS • START: CLOSE";
-              } else if (drawerTab === "settings") {
-                title = "SETTINGS";
-                hint = "↵: CYCLE • ⌫: BACK • START: CLOSE";
-              } else if (drawerTab === "stories") {
-                title = "STORIES";
-                hint = "↵: OPEN • ⌫: DELETE • START: CLOSE";
-              } else if (drawerTab === "models") {
-                title = "MODELS";
-                hint = "↵: EDIT • ⌫: DELETE • START: CLOSE";
-              }
-            } else if (projection === "map") {
-              title = "MAP";
-              hint = "↵: GENERATE • ⌫: EDIT • START: LOOM • SELECT: CONFIG";
-            } else {
-              title = "LOOM";
-              hint = "↵: GENERATE • ⌫: EDIT • START: MAP • SELECT: CONFIG";
-            }
-            return <ModeBar title={title} hint={hint} />;
-          })()}
+          <ModeBar title={currentMode.title} hint={currentMode.hint} />
           {screen === "drawer" ? (
             <Drawer
               tab={drawerTab}
@@ -1667,6 +1047,8 @@ export const GamepadInterface = () => {
                   <TreeListMenu
                     trees={trees}
                     storyTitles={storyTitles}
+                    currentStoryKey={currentLoomId}
+                    storyMeta={getStoryMeta()}
                     selectedIndex={cursorOnTabs ? -1 : selectedTreeIndex}
                     selectedColumn={selectedTreeColumn}
                     sortOrder={storySort}
@@ -1770,7 +1152,12 @@ export const GamepadInterface = () => {
             style={{ display: onLoom ? "flex" : "none" }}
             className="flex-1 flex flex-col min-h-0 overflow-hidden"
           >
-            {renderStoryText()}
+            <StoryText
+              storyTextRef={storyTextRef}
+              currentPath={getCurrentPath()}
+              currentDepth={currentDepth}
+              isGeneratingAt={isGeneratingAt}
+            />
           </div>
 
           {/* Navigation bar - always visible at bottom of screen.
@@ -1783,8 +1170,15 @@ export const GamepadInterface = () => {
             {(() => {
               if (error) {
                 return (
-                  <span className="text-red-500 text-sm">
-                    Error: {error.message}
+                  <span className="text-red-500 text-sm" aria-live="polite">
+                    {error.message}
+                  </span>
+                );
+              }
+              if (emptyGeneration) {
+                return (
+                  <span className="navbar-minibuffer" aria-live="polite">
+                    {emptyGeneration.message}
                   </span>
                 );
               }
@@ -1847,6 +1241,7 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
+            <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
         </section>
 
@@ -1862,12 +1257,16 @@ export const GamepadInterface = () => {
             <div className="terminal-buttons">
               <GamepadButton
                 label="⌫"
+                caption="Back"
+                ariaLabel="B button: go back"
                 active={activeControls.b}
                 onMouseDown={() => handleControlPress("Backspace")}
                 onMouseUp={() => handleControlRelease("Backspace")}
               />
               <GamepadButton
                 label="↵"
+                caption="Choose"
+                ariaLabel="A button: choose"
                 active={activeControls.a}
                 onMouseDown={() => handleControlPress("Enter")}
                 onMouseUp={() => handleControlRelease("Enter")}
@@ -1883,12 +1282,14 @@ export const GamepadInterface = () => {
           <div className="terminal-menu">
             <MenuButton
               label="SELECT"
+              ariaLabel="Select button: open settings"
               active={activeControls.select}
               onMouseDown={() => handleControlPress("`")}
               onMouseUp={() => handleControlRelease("`")}
             />
             <MenuButton
               label="START"
+              ariaLabel="Start button: switch stories"
               active={activeControls.start}
               onMouseDown={() => handleControlPress("Escape")}
               onMouseUp={() => handleControlRelease("Escape")}

@@ -14,6 +14,20 @@ interface GenerationParams {
   textSplitting: boolean;
 }
 
+interface EmptyGenerationNotice {
+  message: string;
+}
+
+export const EMPTY_GENERATION_NOTICE_MESSAGE =
+  "Model returned no text.";
+
+export const getEmptyGenerationNotice = (
+  generatedText: string,
+): EmptyGenerationNotice | null =>
+  generatedText.length === 0
+    ? { message: EMPTY_GENERATION_NOTICE_MESSAGE }
+    : null;
+
 export const createPrompt = (path: StoryNode[], depth: number) => {
   // Validate that depth is within bounds
   if (path.length === 0) {
@@ -37,6 +51,8 @@ export const createPrompt = (path: StoryNode[], depth: number) => {
 export function useStoryGeneration() {
   const { generate, error } = useTextGeneration();
   const [generatedText, setGeneratedText] = useState("");
+  const [emptyGeneration, setEmptyGeneration] =
+    useState<EmptyGenerationNotice | null>(null);
 
   const flattenDraftText = (draft: StoryDraft): string => {
     const segments: string[] = [];
@@ -62,6 +78,7 @@ export function useStoryGeneration() {
     params: GenerationParams,
   ): Promise<StoryDraft> => {
     setGeneratedText("");
+    setEmptyGeneration(null);
     let fullText = "";
 
     const prompt = createPrompt(path, depth);
@@ -82,7 +99,9 @@ export function useStoryGeneration() {
       },
     );
 
-    if (!fullText.length) {
+    const emptyNotice = getEmptyGenerationNotice(fullText);
+    if (emptyNotice) {
+      setEmptyGeneration(emptyNotice);
       throw new Error("Generation returned no content");
     }
 
@@ -160,6 +179,7 @@ export function useStoryGeneration() {
     generateContinuation,
     chooseContinuation,
     generatedText,
+    emptyGeneration,
     error,
   };
 }
