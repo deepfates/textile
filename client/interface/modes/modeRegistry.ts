@@ -42,7 +42,7 @@ export const registeredModes: RegisteredMode[] = [
   {
     id: "drawer-tabs",
     title: "TABS",
-    hint: "◄►: TAB • ↓: ROWS • START: CLOSE",
+    hint: "◄►: TAB • ↵/↓: ROWS • START: CLOSE",
     matches: ({ screen, cursorOnTabs }) => screen === "drawer" && cursorOnTabs,
   },
   {
