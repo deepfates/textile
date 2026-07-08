@@ -957,28 +957,67 @@ html, body {
 .story-action-cluster {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .story-action {
   appearance: none;
-  background: transparent;
-  border: none;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 4px;
   color: inherit;
   cursor: pointer;
-  padding: 0.25rem;
+  font: inherit;
+  font-size: 0.82em;
+  line-height: 1;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.45rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.story-action:hover,
+.story-action:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
 }
 
 .story-action.selected {
   color: var(--theme-focused-foreground);
+  border-color: currentColor;
 }
 
 .menu-item.selected .story-action.selected {
   color: inherit;
   opacity: 1;
+}
+
+.story-action-label {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.story-action-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.story-action-more-summary {
+  display: none;
+}
+
+.story-secondary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* Edit textarea */
@@ -1038,11 +1077,54 @@ html, body {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 480px) {
-  .story-menu-item { grid-template-columns: 1fr; }
-  .story-menu-actions {
+  .story-action-cluster {
+    gap: 0.25rem;
+  }
+
+  .story-action {
+    min-height: 1.9rem;
+    padding: 0.3rem 0.4rem;
+  }
+
+  .story-action-label {
+    display: none;
+  }
+
+  .story-action-more-summary {
+    display: inline-flex;
+  }
+
+  .story-action-more.selected .story-action-more-summary {
+    color: var(--theme-focused-foreground);
+    border-color: currentColor;
+  }
+
+  .story-action-more:focus-within,
+  .story-action-more.selected {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .menu-item.selected .story-action-more.selected .story-action-more-summary {
+    color: inherit;
+  }
+
+  .story-action-more:not(:focus-within):not(.selected) .story-secondary-actions {
+    display: none;
+  }
+
+  .story-action-more:focus-within .story-secondary-actions,
+  .story-action-more.selected .story-secondary-actions {
+    position: static;
+    z-index: 3;
+    display: flex;
+    align-items: stretch;
     flex-direction: row;
-    justify-content: flex-start;
-    justify-self: start;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    width: 100%;
+    margin-top: 0.25rem;
   }
 }
 
