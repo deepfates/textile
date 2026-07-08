@@ -54,6 +54,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch",
+  },
   "overrides": {
     "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
     "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
@@ -353,7 +356,7 @@
 
     "@lync/index": ["@lync/index@vendor/lync-packages/lync-index-0.2.0.tgz", { "dependencies": { "@lync/core": "0.2.0" } }, "sha512-vHmz96BVFd4vgRJ3Q7jefRcKWx+5fK/Tb4m1p+CGWHimG9EJVhyCE+9ChRBFWw3TZRdC/Wlp9JGyRZILM4DINA=="],
 
-    "@lync/sync-server": ["@lync/sync-server@vendor/lync-packages/lync-sync-server-0.1.0.tgz", { "dependencies": { "@automerge/automerge-repo": "^2.5.5", "@automerge/automerge-repo-network-websocket": "^2.5.5", "isomorphic-ws": "^5.0.0" } }, "sha512-wC/JlvjKByAmBwfx7dc8PPAUFTR+7oO+9uIOdRcFLIf7SQHc9Cp7JvjsPJJCAofNiwXUv23ocELTiPWJdlTIViQ=="],
+    "@lync/sync-server": ["@lync/sync-server@vendor/lync-packages/lync-sync-server-0.1.0.tgz", { "dependencies": { "@automerge/automerge-repo": "^2.5.5", "@automerge/automerge-repo-network-websocket": "^2.5.5", "isomorphic-ws": "^5.0.0" } }],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
