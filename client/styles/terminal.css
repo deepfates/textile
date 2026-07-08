@@ -1224,6 +1224,38 @@ html, body {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 480px) {
+  .gamepad-container.portrait {
+    --portrait-screen-max-height: 58dvh;
+    --portrait-control-gap: 0.75rem;
+    gap: var(--portrait-control-gap);
+    justify-content: center;
+  }
+
+  .gamepad-container.portrait.phone-height-compact {
+    --portrait-screen-max-height: 52dvh;
+    --portrait-control-gap: 0.5rem;
+  }
+
+  .gamepad-container.portrait.phone-height-regular {
+    --portrait-screen-max-height: 56dvh;
+  }
+
+  .gamepad-container.portrait.phone-height-tall {
+    --portrait-screen-max-height: 60dvh;
+  }
+
+  .gamepad-container.portrait .terminal-screen {
+    flex: 0 1 min(var(--portrait-screen-max-height), 34rem);
+  }
+
+  .gamepad-container.portrait .gamepad-controls {
+    gap: 0.75rem;
+  }
+
+  .gamepad-container.portrait .controls-top {
+    padding: 0 1.25rem;
+  }
+
   .story-action-cluster {
     gap: 0.25rem;
   }
