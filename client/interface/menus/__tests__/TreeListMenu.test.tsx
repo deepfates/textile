@@ -36,6 +36,7 @@ describe("TreeListMenu story actions", () => {
     expect(html).toContain('aria-label="Story link"');
     expect(html).toContain('aria-label="Thread link"');
     expect(html).toContain('aria-label="More story actions"');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-label="Export JSON"');
     expect(html).toContain('aria-label="Export thread"');
     expect(html).toContain('class="story-secondary-actions"');

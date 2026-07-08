@@ -1152,7 +1152,7 @@ html, body {
     border-color: currentColor;
   }
 
-  .story-action-more:focus-within,
+  .story-action-more.is-open,
   .story-action-more.selected {
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -1162,11 +1162,11 @@ html, body {
     color: inherit;
   }
 
-  .story-action-more:not(:focus-within):not(.selected) .story-secondary-actions {
+  .story-action-more:not(.is-open):not(.selected) .story-secondary-actions {
     display: none;
   }
 
-  .story-action-more:focus-within .story-secondary-actions,
+  .story-action-more.is-open .story-secondary-actions,
   .story-action-more.selected .story-secondary-actions {
     position: static;
     z-index: 3;

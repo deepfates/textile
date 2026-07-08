@@ -1,4 +1,5 @@
-import type { MouseEvent, ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { TreeListProps } from "../types";
 import {
   orderKeysByStorySort,
@@ -91,7 +92,7 @@ interface StoryActionButtonProps {
   icon: ReactElement;
   selected: boolean;
   secondary?: boolean;
-  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onFocus: () => void;
 }
 
@@ -147,6 +148,10 @@ export const TreeListMenu = ({
   onExportThread,
   onHighlight,
 }: TreeListProps) => {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const ignoreMoreClickRef = useRef(false);
+  const selectedPositionRef = useRef({ selectedColumn, selectedIndex });
+  const [openSecondaryKey, setOpenSecondaryKey] = useState<string | null>(null);
   const orderedKeys = orderKeysByStorySort(trees, sortOrder);
   const hasShare = Boolean(onShareStory);
   const hasThreadShare = Boolean(onShareThread);
@@ -162,14 +167,52 @@ export const TreeListMenu = ({
     ? 1 + (hasShare ? 1 : 0) + (hasThreadShare ? 1 : 0) + (hasJson ? 1 : 0)
     : -1;
 
+  useEffect(() => {
+    if (!openSecondaryKey) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpenSecondaryKey(null);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenSecondaryKey(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSecondaryKey]);
+
+  useEffect(() => {
+    const previous = selectedPositionRef.current;
+    const selectionChanged =
+      previous.selectedIndex !== selectedIndex ||
+      previous.selectedColumn !== selectedColumn;
+
+    selectedPositionRef.current = { selectedColumn, selectedIndex };
+
+    if (selectionChanged && selectedColumn === 0) {
+      setOpenSecondaryKey(null);
+    }
+  }, [selectedColumn, selectedIndex]);
+
   return (
-    <div className="menu-content">
+    <div className="menu-content" ref={menuRef}>
       <Row
         kind="pick"
         label="Sort"
         value={SORT_LABELS[sortOrder]}
         selected={selectedIndex === 0 && selectedColumn === 0}
         onActivate={() => {
+          setOpenSecondaryKey(null);
           onToggleSort?.(1);
           onHighlight?.(0, 0);
         }}
@@ -182,6 +225,7 @@ export const TreeListMenu = ({
                 selected={selectedIndex === 0 && selectedColumn === 1}
                 onClick={(event) => {
                   event.stopPropagation();
+                  setOpenSecondaryKey(null);
                   onShareIndex?.();
                   onHighlight?.(0, 1);
                 }}
@@ -197,6 +241,7 @@ export const TreeListMenu = ({
         glyph="+"
         selected={selectedIndex === 1 && selectedColumn === 0}
         onActivate={() => {
+          setOpenSecondaryKey(null);
           onNew?.();
           onHighlight?.(1, 0);
         }}
@@ -224,9 +269,17 @@ export const TreeListMenu = ({
           selectedColumn === threadColumn;
 
         const secondarySelected = Boolean(jsonSelected || threadSelected);
+        const secondaryOpen = openSecondaryKey === key;
+        const secondaryActionsId = `story-secondary-actions-${rowIndex}`;
+        const toggleSecondaryActions = () => {
+          setOpenSecondaryKey((openKey) => (openKey === key ? null : key));
+        };
         const secondaryActions =
           hasJson || hasThread ? (
-            <div className="story-secondary-actions">
+            <div
+              id={secondaryActionsId}
+              className="story-secondary-actions"
+            >
               {hasJson ? (
                 <StoryActionButton
                   label="Export JSON"
@@ -237,6 +290,7 @@ export const TreeListMenu = ({
                     event.stopPropagation();
                     onExportJson?.(key);
                     onHighlight?.(rowIndex, jsonColumn);
+                    setOpenSecondaryKey(null);
                   }}
                   onFocus={() => onHighlight?.(rowIndex, jsonColumn)}
                 />
@@ -251,6 +305,7 @@ export const TreeListMenu = ({
                     event.stopPropagation();
                     onExportThread?.(key);
                     onHighlight?.(rowIndex, threadColumn);
+                    setOpenSecondaryKey(null);
                   }}
                   onFocus={() => onHighlight?.(rowIndex, threadColumn)}
                 />
@@ -268,6 +323,7 @@ export const TreeListMenu = ({
                   selected={Boolean(shareSelected)}
                   onClick={(event) => {
                     event.stopPropagation();
+                    setOpenSecondaryKey(null);
                     onShareStory?.(key);
                     onHighlight?.(rowIndex, shareColumn);
                   }}
@@ -281,6 +337,7 @@ export const TreeListMenu = ({
                   selected={Boolean(threadShareSelected)}
                   onClick={(event) => {
                     event.stopPropagation();
+                    setOpenSecondaryKey(null);
                     onShareThread?.(key);
                     onHighlight?.(rowIndex, threadShareColumn);
                   }}
@@ -291,13 +348,37 @@ export const TreeListMenu = ({
                 <div
                   className={`story-action-more${
                     secondarySelected ? " selected" : ""
-                  }`}
-                  onClick={(event) => event.stopPropagation()}
+                  }${secondaryOpen ? " is-open" : ""}`}
+                  onPointerDown={(event) => {
+                    const summary = (event.target as Element).closest(
+                      ".story-action-more-summary",
+                    );
+                    if (!summary || event.pointerType === "mouse") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    ignoreMoreClickRef.current = true;
+                    toggleSecondaryActions();
+                  }}
+                  onClick={(event) => {
+                    const summary = (event.target as Element).closest(
+                      ".story-action-more-summary",
+                    );
+                    event.stopPropagation();
+                    if (ignoreMoreClickRef.current) {
+                      ignoreMoreClickRef.current = false;
+                      return;
+                    }
+                    if (summary) {
+                      toggleSecondaryActions();
+                    }
+                  }}
                 >
                   <button
                     type="button"
                     className="story-action story-action-more-summary"
                     aria-label="More story actions"
+                    aria-expanded={secondaryOpen}
+                    aria-controls={secondaryActionsId}
                     title="More story actions"
                     onFocus={() => {
                       if (jsonSelected) {
@@ -329,6 +410,7 @@ export const TreeListMenu = ({
             trailing={trailing}
             selected={bodySelected}
             onActivate={() => {
+              setOpenSecondaryKey(null);
               onSelect(key);
               onHighlight?.(rowIndex, 0);
             }}
