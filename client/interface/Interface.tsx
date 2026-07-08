@@ -61,7 +61,10 @@ import {
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
   getStoryIndex,
+  getLyncSyncSnapshot,
   replaceStoryFocusUrl,
+  subscribeLyncSyncStatus,
+  type LyncSyncSnapshot,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
 
@@ -88,8 +91,40 @@ const SETTINGS_ROW_LABELS = [
   "Font",
 ];
 
+function useLyncSyncIndicator(): LyncSyncSnapshot {
+  const [status, setStatus] = useState(() => getLyncSyncSnapshot());
+
+  useEffect(() => {
+    const update = () => setStatus(getLyncSyncSnapshot());
+    const unsubscribe = subscribeLyncSyncStatus(update);
+    update();
+    return unsubscribe;
+  }, []);
+
+  return status;
+}
+
+function LyncSyncIndicator({ status }: { status: LyncSyncSnapshot }) {
+  const label =
+    status.state === "connected"
+      ? "Lync connected"
+      : status.state === "reconnecting"
+        ? "Lync reconnecting"
+        : "Lync local-only";
+  return (
+    <span
+      className={`lync-sync-status lync-sync-status--${status.state}`}
+      aria-label={label}
+      title={status.detail}
+    >
+      {label}
+    </span>
+  );
+}
+
 export const GamepadInterface = () => {
   const { isOnline, isOffline, wasOffline } = useOfflineStatus();
+  const lyncSyncStatus = useLyncSyncIndicator();
   const {
     themeMode,
     setThemeMode,
@@ -1209,6 +1244,7 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
+            <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
         </section>
 

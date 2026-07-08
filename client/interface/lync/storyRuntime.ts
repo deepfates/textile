@@ -31,6 +31,16 @@ type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
 export type StoryReferenceImport =
   | { kind: "index"; indexId: string }
   | { kind: "loom" | "turn" | "thread"; loomId: string; turnId?: TurnId };
+export type LyncSyncState = "connected" | "reconnecting" | "local-only";
+export type LyncSyncSnapshot = {
+  state: LyncSyncState;
+  detail: string;
+};
+export type LyncSyncEvent =
+  | { type: "local-only"; detail: string }
+  | { type: "connecting" }
+  | { type: "connected" }
+  | { type: "disconnected" };
 
 type StoryClient = ReturnType<
   typeof createLoomClient<
@@ -46,11 +56,20 @@ let client: StoryClient | null = null;
 let indexPromise: Promise<StoryIndex> | null = null;
 let eventStore: EventStore | null = null;
 let serverLoreImportPromise: Promise<void> | null = null;
+let syncMonitorStarted = false;
+let syncSocket: WebSocket | null = null;
+let syncReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const syncListeners = new Set<() => void>();
+let syncSnapshot: LyncSyncSnapshot = {
+  state: "local-only",
+  detail: "Sync starts when the browser runtime is ready.",
+};
 
 const INDEX_STORAGE_KEY = "textile-lync-v1-index-id";
 const LORE_IMPORT_STORAGE_KEY = "textile-lync-v1-server-lore-imported";
 const STORAGE_NAMESPACE = "textile-lync-v1";
 const LORE_AUTHOR = { actor: "textile", via: "textile-browser" };
+const SYNC_RECONNECT_MS = 2_500;
 
 function getStoryClient() {
   client ??= (() => {
@@ -89,6 +108,32 @@ export function getStoryLooms(): Looms<
   StoryTurnMeta
 > {
   return getStoryClient().looms;
+}
+
+export function reduceLyncSyncStatus(
+  _current: LyncSyncSnapshot,
+  event: LyncSyncEvent,
+): LyncSyncSnapshot {
+  switch (event.type) {
+    case "local-only":
+      return { state: "local-only", detail: event.detail };
+    case "connected":
+      return { state: "connected", detail: "Lync relay connected." };
+    case "connecting":
+      return { state: "reconnecting", detail: "Connecting to the Lync relay." };
+    case "disconnected":
+      return { state: "reconnecting", detail: "Lync relay unavailable; retrying." };
+  }
+}
+
+export function getLyncSyncSnapshot(): LyncSyncSnapshot {
+  return syncSnapshot;
+}
+
+export function subscribeLyncSyncStatus(listener: () => void): () => void {
+  syncListeners.add(listener);
+  startLyncSyncMonitor();
+  return () => syncListeners.delete(listener);
 }
 
 export async function getStoryIndex(): Promise<StoryIndex> {
@@ -264,6 +309,124 @@ async function openReferenceWithRetry(ref: NonNullable<ReturnType<typeof referen
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function emitLyncSyncEvent(event: LyncSyncEvent) {
+  const next = reduceLyncSyncStatus(syncSnapshot, event);
+  if (next.state === syncSnapshot.state && next.detail === syncSnapshot.detail) return;
+  syncSnapshot = next;
+  for (const listener of syncListeners) listener();
+}
+
+function startLyncSyncMonitor() {
+  if (syncMonitorStarted) return;
+  syncMonitorStarted = true;
+  if (typeof window === "undefined") {
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "Server rendering uses local Lync state only.",
+    });
+    return;
+  }
+
+  if (!("WebSocket" in window)) {
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "This browser cannot open the Lync relay.",
+    });
+    return;
+  }
+
+  const handleOffline = () => {
+    clearLyncReconnect();
+    closeLyncSocket();
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "Browser is offline; stories are local only.",
+    });
+  };
+  const handleOnline = () => {
+    connectLyncSocket();
+  };
+  window.addEventListener("offline", handleOffline);
+  window.addEventListener("online", handleOnline);
+  connectLyncSocket();
+}
+
+function connectLyncSocket() {
+  if (typeof window === "undefined") return;
+  if (window.location.protocol === "file:") {
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "No Lync relay is available from a local file.",
+    });
+    return;
+  }
+  if (window.navigator && !window.navigator.onLine) {
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "Browser is offline; stories are local only.",
+    });
+    return;
+  }
+  if (syncSocket && syncSocket.readyState !== WebSocket.CLOSED) return;
+
+  clearLyncReconnect();
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const url = `${protocol}//${window.location.host}/lync`;
+  emitLyncSyncEvent({ type: "connecting" });
+
+  try {
+    const socket = new WebSocket(url);
+    syncSocket = socket;
+    socket.addEventListener("open", () => {
+      if (syncSocket !== socket) return;
+      emitLyncSyncEvent({ type: "connected" });
+    });
+    socket.addEventListener("close", () => {
+      if (syncSocket !== socket) return;
+      syncSocket = null;
+      emitLyncSyncEvent({ type: "disconnected" });
+      scheduleLyncReconnect();
+    });
+    socket.addEventListener("error", () => {
+      if (syncSocket !== socket) return;
+      emitLyncSyncEvent({ type: "disconnected" });
+    });
+  } catch {
+    syncSocket = null;
+    emitLyncSyncEvent({ type: "disconnected" });
+    scheduleLyncReconnect();
+  }
+}
+
+function scheduleLyncReconnect() {
+  if (typeof window === "undefined") return;
+  if (window.navigator && !window.navigator.onLine) {
+    emitLyncSyncEvent({
+      type: "local-only",
+      detail: "Browser is offline; stories are local only.",
+    });
+    return;
+  }
+  if (syncReconnectTimer) return;
+  syncReconnectTimer = setTimeout(() => {
+    syncReconnectTimer = null;
+    connectLyncSocket();
+  }, SYNC_RECONNECT_MS);
+}
+
+function clearLyncReconnect() {
+  if (!syncReconnectTimer) return;
+  clearTimeout(syncReconnectTimer);
+  syncReconnectTimer = null;
+}
+
+function closeLyncSocket() {
+  const socket = syncSocket;
+  syncSocket = null;
+  if (!socket || socket.readyState === WebSocket.CLOSED) return;
+  socket.close();
 }
 
 async function importServerLoreIfNeeded(): Promise<void> {

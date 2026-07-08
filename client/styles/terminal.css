@@ -404,6 +404,53 @@ html, body {
   border-top: 1px solid var(--theme-border);
   min-height: 1.5rem;
   flex-shrink: 0;
+  position: relative;
+}
+
+.lync-sync-status {
+  position: absolute;
+  right: 0.5rem;
+  max-width: min(34vw, 15rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--theme-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.82;
+  pointer-events: auto;
+}
+
+.lync-sync-status::before {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 0.45ch;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: 0.08em;
+}
+
+.lync-sync-status--connected {
+  color: var(--theme-focused-foreground);
+  opacity: 0.74;
+}
+
+.lync-sync-status--reconnecting {
+  color: var(--theme-muted);
+}
+
+.lync-sync-status--local-only {
+  color: var(--theme-muted);
+  opacity: 0.66;
+}
+
+@media (max-width: 520px) {
+  .lync-sync-status {
+    max-width: 7.5rem;
+    font-size: 0.68rem;
+  }
 }
 
 /* ===== CONTROLS ===== */
