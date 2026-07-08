@@ -13,6 +13,37 @@ interface GenerationError {
   message: string;
 }
 
+export const OPENROUTER_API_KEY_ERROR_MESSAGE =
+  "OpenRouter API key is missing or invalid. Add or update OPENROUTER_API_KEY to generate.";
+
+const OPENROUTER_AUTH_ERROR_PATTERNS = [
+  /\b401\b.*(?:missing authentication header|user not found|invalid api key|incorrect api key|no auth credentials)/i,
+  /missing authentication header/i,
+  /invalid api key/i,
+  /incorrect api key/i,
+  /no auth credentials/i,
+];
+
+export function formatGenerationErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "An error occurred during generation";
+  }
+
+  if (error.name === "TypeError" && error.message.includes("fetch")) {
+    return "Network error - check your connection";
+  }
+
+  if (
+    OPENROUTER_AUTH_ERROR_PATTERNS.some((pattern) =>
+      pattern.test(error.message),
+    )
+  ) {
+    return OPENROUTER_API_KEY_ERROR_MESSAGE;
+  }
+
+  return error.message;
+}
+
 export function useTextGeneration() {
   const [error, setError] = useState<GenerationError | null>(null);
 
@@ -98,16 +129,7 @@ export function useTextGeneration() {
           }
         }
       } catch (error: unknown) {
-        let errorMessage = "An error occurred during generation";
-
-        if (error instanceof Error) {
-          if (error.name === "TypeError" && error.message.includes("fetch")) {
-            errorMessage = "Network error - check your connection";
-          } else {
-            errorMessage = error.message;
-          }
-        }
-
+        const errorMessage = formatGenerationErrorMessage(error);
         setError({ message: errorMessage });
         console.error("Generation error:", error);
         throw new Error(errorMessage);

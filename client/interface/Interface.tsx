@@ -1138,8 +1138,8 @@ export const GamepadInterface = () => {
             {(() => {
               if (error) {
                 return (
-                  <span className="text-red-500 text-sm">
-                    Error: {error.message}
+                  <span className="text-red-500 text-sm" aria-live="polite">
+                    {error.message}
                   </span>
                 );
               }
