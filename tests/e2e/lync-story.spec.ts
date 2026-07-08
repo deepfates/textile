@@ -445,6 +445,50 @@ test("editing the story root creates a new story without changing the original l
   await context.close();
 });
 
+test("lore-backed story edits survive a browser reload", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await mockGeneration(page, "Reload persistence");
+
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForCurrentThreadRef(page);
+
+  await page.keyboard.press("Backspace");
+  await page.locator("textarea").fill("Reloaded edited opening,");
+  await page.getByRole("button", { name: "START" }).click();
+  await expect(page.locator("body")).toContainText(
+    "Reloaded edited opening,",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+
+  const editedStoryUrl = page.url();
+  const editedRef = referenceFromPageUrl(page);
+  expect(editedRef?.kind).toBe("thread");
+  expect(editedRef?.loomId).toBeTruthy();
+  expect(editedRef?.turnId).toBeTruthy();
+
+  await page.reload();
+
+  await expect(page).toHaveURL(editedStoryUrl);
+  await expect(page.locator("body")).toContainText(
+    "Reloaded edited opening,",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await expect.poll(() => referenceFromPageUrl(page)).toMatchObject(editedRef);
+
+  await openStoriesDrawer(page);
+  await expect(page.locator("body")).toContainText("Story 1");
+
+  await context.close();
+});
+
 test("generating after a root edit branches from the new story only", async ({
   browser,
 }) => {

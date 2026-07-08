@@ -6,10 +6,10 @@
       "name": "textile",
       "dependencies": {
         "@ax-llm/ax": "^14.0.39",
-        "@lync/client": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/client",
-        "@lync/core": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/core",
-        "@lync/index": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/index",
-        "@lync/sync-server": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/sync-server",
+        "@lync/client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
+        "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
+        "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
+        "@lync/sync-server": "file:vendor/lync-packages/lync-sync-server-0.1.0.tgz",
         "@tailwindcss/postcss": "^4.1.17",
         "@types/d3-flextree": "^2.1.4",
         "@types/express": "^4.17.21",
@@ -53,44 +53,10 @@
         "vite-plugin-pwa": "^1.0.1",
       },
     },
-    "../../../Users/deepfates/Hacking/github/deepfates/lync/packages/client": {
-      "name": "@lync/client",
-      "version": "0.2.0",
-      "dependencies": {
-        "@automerge/automerge-repo": "^2.5.5",
-        "@automerge/automerge-repo-network-websocket": "^2.5.5",
-        "@lync/core": "workspace:*",
-        "@lync/index": "workspace:*",
-        "isomorphic-ws": "^5.0.0",
-      },
-    },
-    "../../../Users/deepfates/Hacking/github/deepfates/lync/packages/core": {
-      "name": "@lync/core",
-      "version": "0.2.0",
-      "dependencies": {
-        "@automerge/automerge": "^3.2.6",
-      },
-    },
-    "../../../Users/deepfates/Hacking/github/deepfates/lync/packages/index": {
-      "name": "@lync/index",
-      "version": "0.2.0",
-      "dependencies": {
-        "@lync/core": "workspace:*",
-      },
-    },
-    "../../../Users/deepfates/Hacking/github/deepfates/lync/packages/sync-server": {
-      "name": "@lync/sync-server",
-      "version": "0.1.0",
-      "dependencies": {
-        "@automerge/automerge-repo": "^2.5.5",
-        "@automerge/automerge-repo-network-websocket": "^2.5.5",
-        "isomorphic-ws": "^5.0.0",
-      },
-    },
   },
   "overrides": {
-    "@lync/core": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/core",
-    "@lync/index": "file:/Users/deepfates/Hacking/github/deepfates/lync/packages/index",
+    "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
+    "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -381,13 +347,13 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@lync/client": ["@lync/client@workspace:../../../Users/deepfates/Hacking/github/deepfates/lync/packages/client"],
+    "@lync/client": ["@lync/client@vendor/lync-packages/lync-client-0.2.0.tgz", { "dependencies": { "@automerge/automerge-repo": "^2.5.5", "@automerge/automerge-repo-network-websocket": "^2.5.5", "@lync/core": "0.2.0", "@lync/index": "0.2.0", "isomorphic-ws": "^5.0.0" } }, "sha512-GT4iwIaCeaoMtODgGADKU85VVV1c8ZpbOSV19SXfPizNL4kli4KgzxbZQVL6A2xG79oZQAW/HwwH7wmC7Nwjtw=="],
 
-    "@lync/core": ["@lync/core@workspace:../../../Users/deepfates/Hacking/github/deepfates/lync/packages/core"],
+    "@lync/core": ["@lync/core@vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz", { "dependencies": { "@automerge/automerge": "^3.2.6" } }, "sha512-doGTnNG3z+hBmYoXqq7Mx+K7+V++s6V/WD0uvSkqBWAT3aOBKW6vnLC/z0tXcOwcwN1EZQkxqX4248I4IsW2Rw=="],
 
-    "@lync/index": ["@lync/index@workspace:../../../Users/deepfates/Hacking/github/deepfates/lync/packages/index"],
+    "@lync/index": ["@lync/index@vendor/lync-packages/lync-index-0.2.0.tgz", { "dependencies": { "@lync/core": "0.2.0" } }, "sha512-vHmz96BVFd4vgRJ3Q7jefRcKWx+5fK/Tb4m1p+CGWHimG9EJVhyCE+9ChRBFWw3TZRdC/Wlp9JGyRZILM4DINA=="],
 
-    "@lync/sync-server": ["@lync/sync-server@workspace:../../../Users/deepfates/Hacking/github/deepfates/lync/packages/sync-server"],
+    "@lync/sync-server": ["@lync/sync-server@vendor/lync-packages/lync-sync-server-0.1.0.tgz", { "dependencies": { "@automerge/automerge-repo": "^2.5.5", "@automerge/automerge-repo-network-websocket": "^2.5.5", "isomorphic-ws": "^5.0.0" } }, "sha512-wC/JlvjKByAmBwfx7dc8PPAUFTR+7oO+9uIOdRcFLIf7SQHc9Cp7JvjsPJJCAofNiwXUv23ocELTiPWJdlTIViQ=="],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
