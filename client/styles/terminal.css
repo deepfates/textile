@@ -654,6 +654,21 @@ html, body {
 
 .minimap-viewport::-webkit-scrollbar { display: none; }
 
+.minimap-viewport.single-node {
+  display: grid;
+  place-items: center;
+}
+
+.minimap-single-node-canvas {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.minimap-single-node-affordance {
+  opacity: 0.34;
+}
+
 .minimap-minibuffer {
   border-top: 1px solid var(--theme-border);
   padding: 0.25rem 0.5rem;
