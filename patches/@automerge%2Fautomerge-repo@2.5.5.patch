@@ -1,0 +1,26 @@
+diff --git a/dist/helpers/throttle.js b/dist/helpers/throttle.js
+index b6c5e229eb71a9e338cccc34c7ee7f586b59eb2b..863626770c3f64b9e5f987544c6deacd0be5926d 100644
+--- a/dist/helpers/throttle.js
++++ b/dist/helpers/throttle.js
+@@ -29,7 +29,7 @@ export const throttle = (fn, delay) => {
+     let wait;
+     let timeout;
+     return function (...args) {
+-        wait = lastCall + delay - Date.now();
++        wait = Math.max(0, lastCall + delay - Date.now());
+         clearTimeout(timeout);
+         timeout = setTimeout(() => {
+             fn(...args);
+diff --git a/src/helpers/throttle.ts b/src/helpers/throttle.ts
+index 3d7b5dc9baa4f91adc6d5c1ac599f5002a28bfe1..a517e786fd2bd2fedc86a8c5507a0984b970fc2e 100644
+--- a/src/helpers/throttle.ts
++++ b/src/helpers/throttle.ts
+@@ -33,7 +33,7 @@ export const throttle = <F extends (...args: Parameters<F>) => ReturnType<F>>(
+   let wait
+   let timeout: ReturnType<typeof setTimeout>
+   return function (...args: Parameters<F>) {
+-    wait = lastCall + delay - Date.now()
++    wait = Math.max(0, lastCall + delay - Date.now())
+     clearTimeout(timeout)
+     timeout = setTimeout(() => {
+       fn(...args)

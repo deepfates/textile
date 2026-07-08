@@ -63,5 +63,8 @@
   "overrides": {
     "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
     "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz"
+  },
+  "patchedDependencies": {
+    "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch"
   }
 }
