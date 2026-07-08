@@ -22,6 +22,7 @@ interface BaseProps {
   onActivate?: () => void;
   onHover?: () => void;
   danger?: boolean;
+  className?: string;
 }
 
 interface PickProps extends BaseProps {
@@ -80,6 +81,7 @@ export const Row = (props: RowProps) => {
     danger ? "menu-item--danger" : "",
     props.kind === "action" && props.disabled ? "menu-item--disabled" : "",
     props.kind === "action" && props.stacked ? "menu-item--stacked" : "",
+    props.className,
   ]
     .filter(Boolean)
     .join(" ");

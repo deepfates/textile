@@ -990,6 +990,53 @@ html, body {
   color: var(--theme-focused-foreground);
 }
 
+.story-menu-item {
+  position: relative;
+  background: transparent;
+  border-left: 2px solid transparent;
+  border-top: 1px solid color-mix(in srgb, var(--theme-border) 55%, transparent);
+  min-height: 3.1rem;
+  padding-left: calc(0.75rem - 2px);
+}
+
+.story-menu-item:last-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-border) 55%, transparent);
+}
+
+.story-menu-item:hover,
+.story-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--theme-text) 6%, transparent);
+  outline: none;
+}
+
+.story-menu-item.selected {
+  background: var(--theme-row-bg);
+  color: var(--theme-row-fg);
+}
+
+.story-menu-item--current {
+  border-left-color: var(--theme-focused-foreground);
+  background: color-mix(in srgb, var(--theme-focused-foreground) 10%, transparent);
+}
+
+.story-menu-item--current .menu-item-label::after {
+  content: "current";
+  display: inline-flex;
+  margin-left: 0.75ch;
+  padding: 0 0.45ch;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 0.78em;
+  font-weight: normal;
+  line-height: 1.3;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.story-menu-item.selected.story-menu-item--current {
+  border-left-color: currentColor;
+}
+
 /* ===== Drawer with tabs ===== */
 .drawer {
   display: flex;
