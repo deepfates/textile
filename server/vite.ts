@@ -33,6 +33,28 @@ const client_dir_prod = path.resolve(__dirname, "../dist/client");
 const client_assets_dir = path.resolve(__dirname, "../client/assets");
 let shutdownHandlersInstalled = false;
 
+type DevHmrClientOptions = {
+  clientPort?: number;
+  protocol?: "ws" | "wss";
+};
+
+export function devHmrClientOptions(
+  env: NodeJS.ProcessEnv = process.env,
+): DevHmrClientOptions {
+  const runningBehindHttpsProxy = Boolean(
+    env.REPL_ID || env.REPL_SLUG || env.REPLIT_DB_URL,
+  );
+
+  if (!runningBehindHttpsProxy) {
+    return {};
+  }
+
+  return {
+    clientPort: 443,
+    protocol: "wss",
+  };
+}
+
 function firstExistingPath(paths: string[]) {
   return paths.find((candidate) => fs.existsSync(candidate));
 }
@@ -103,8 +125,7 @@ export async function createServer() {
         middlewareMode: true,
         hmr: {
           server: http_server,
-          clientPort: 443,
-          protocol: "wss",
+          ...devHmrClientOptions(),
         },
         allowedHosts: [".replit.dev"], // Allow Replit's dynamic domains
       },
