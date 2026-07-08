@@ -811,7 +811,8 @@ export const GamepadInterface = () => {
   const { activeControls, handleControlPress, handleControlRelease } =
     useKeyboardControls(handleControlAction);
 
-  const { containerRef, layout } = useResponsiveGamepadLayout();
+  const { containerRef, layout, portraitPhoneHeight } =
+    useResponsiveGamepadLayout();
 
   // Helper: scroll a specific rendered node into view within the story container
   const scrollNodeIntoView = useCallback(
@@ -912,7 +913,7 @@ export const GamepadInterface = () => {
         ref={containerRef}
         className={`gamepad-container ${
           layout === "landscape" ? "landscape" : "portrait"
-        }`}
+        }${portraitPhoneHeight ? ` phone-height-${portraitPhoneHeight}` : ""}`}
       >
         {/* Screen area */}
         <section
