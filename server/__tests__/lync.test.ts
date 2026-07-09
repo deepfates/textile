@@ -1,29 +1,23 @@
 import { describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { throttle } from "@automerge/automerge-repo/helpers/throttle.js";
-import { createNodeLoomClient } from "@lync/client/node";
-import { textStoryLoomMeta } from "@lync/core/profiles/text-story";
-import { createLyncServer } from "@lync/sync-server";
+import { createMemoryEventStore } from "lync-core/memory-log";
+import { createLyncLooms, loomRootId } from "lync-core/looms";
+import { createSyncedStore, createWebSocketTransport } from "lync-core/synced-store";
+import { textStoryLoomMeta } from "lync-core/profiles/text-story";
+import { startLyncServe } from "lync-server";
 import { resolveLyncAuthMode } from "../lync";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function findOpenPort() {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const port = 18_000 + Math.floor(Math.random() * 20_000);
-    const available = await new Promise<boolean>((resolve) => {
-      const server = net.createServer();
-      server.once("error", () => resolve(false));
-      server.listen(port, "127.0.0.1", () => {
-        server.close(() => resolve(true));
-      });
-    });
-    if (available) return port;
+async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return true;
+    await delay(20);
   }
-  throw new Error("Could not find an open port for Lync test relay");
+  return false;
 }
 
 describe("lync server config", () => {
@@ -33,103 +27,64 @@ describe("lync server config", () => {
     expect(resolveLyncAuthMode("api")).toBe("site-access");
   });
 
-  it("can make /lync a public stock Automerge sync endpoint", () => {
+  it("can make /lync a public sync endpoint", () => {
     expect(resolveLyncAuthMode("public")).toBe("public");
     expect(resolveLyncAuthMode(" PUBLIC ")).toBe("public");
   });
+});
 
-  it("does not schedule negative sync-state throttle delays after reconnect stalls", async () => {
-    const realNow = Date.now;
-    const realSetTimeout = globalThis.setTimeout;
-    const delays: number[] = [];
-    let now = 1_000;
-    let calls = 0;
-
-    Date.now = () => now;
-    globalThis.setTimeout = ((handler, timeout, ...args) => {
-      delays.push(Number(timeout));
-      return realSetTimeout(handler, 0, ...args);
-    }) as typeof setTimeout;
-
-    try {
-      const saveSyncState = throttle(() => {
-        calls += 1;
-      }, 100);
-
-      now = 1_200;
-      saveSyncState();
-
-      await new Promise((resolve) => realSetTimeout(resolve, 5));
-    } finally {
-      Date.now = realNow;
-      globalThis.setTimeout = realSetTimeout;
-    }
-
-    expect(delays).toEqual([0]);
-    expect(calls).toBe(1);
-  });
-
-  it("keeps repeated Lync story reconnects free of negative timeout warnings", async () => {
+describe("lync relay convergence", () => {
+  it("converges several live stories to a fresh reader", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "textile-lync-"));
-    const relay = createLyncServer({
-      port: await findOpenPort(),
-      path: "/lync",
-      storageDir: path.join(tempDir, "relay"),
-      keepAliveInterval: 25,
-      repoConfig: { saveDebounceRate: 5 },
-    });
-    const warnings: string[] = [];
-    const onWarning = (warning: Error) => {
-      if (warning.name === "TimeoutNegativeWarning") {
-        warnings.push(warning.message);
-      }
-    };
+    const relay = await startLyncServe({ dir: path.join(tempDir, "relay"), log: () => {} });
+    const url = `ws://localhost:${relay.port}`;
 
-    process.on("warning", onWarning);
-
+    const writers: Array<{ close: () => void }> = [];
+    let reader: { close: () => void } | undefined;
+    const createdRoots: string[] = [];
     try {
-      await delay(10);
-      const syncUrl = relay.url;
-
-      for (let cycle = 0; cycle < 4; cycle += 1) {
-        const client = createNodeLoomClient({
-          storageDir: path.join(tempDir, `client-${cycle}`),
-          sync: {
-            url: syncUrl,
-            adapter: "resilient",
-            retryInterval: 20,
-          },
-          repoConfig: { saveDebounceRate: 5 },
+      // Several independent writers each seed a story; all stay connected.
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        const store = createSyncedStore(
+          createMemoryEventStore(),
+          createWebSocketTransport(url, { reconnectMs: 0 }),
+        );
+        writers.push(store);
+        const looms = createLyncLooms<{ text: string }, { title: string }, { role: string }>({
+          store,
+          author: { actor: "writer" },
         });
-
-        for (let story = 0; story < 4; story += 1) {
-          const info = await client.looms.create(
-            textStoryLoomMeta({ title: `Story ${cycle}-${story}` }),
-          );
-          const loom = await client.looms.open(info.id);
-          const root = await loom.appendTurn(
-            null,
-            { text: `Seed ${cycle}-${story}` },
-            { role: "prose" },
-          );
-          await loom.appendTurn(
-            root.id,
-            { text: `Branch ${cycle}-${story}` },
-            { role: "prose" },
-          );
-        }
-
-        await delay(30);
-        await client.close();
+        const info = await looms.create(textStoryLoomMeta({ title: `Story ${cycle}` }) as { title: string });
+        const loom = await looms.open(info.id);
+        const seed = await loom.appendTurn(null, { text: `Seed ${cycle}` }, { role: "prose" });
+        await loom.appendTurn(seed.id, { text: `Branch ${cycle}` }, { role: "prose" });
+        createdRoots.push(loomRootId(info.id));
       }
 
-      await delay(30);
+      // Let the writers connect and flush their seeds to the relay before a
+      // reader joins the established session.
+      await waitFor(() => writers.every((w) => (w as ReturnType<typeof createSyncedStore>).status().connection === "online"));
+      await delay(200);
+
+      // A fresh reader syncs every root and sees all three stories in full.
+      reader = createSyncedStore(
+        createMemoryEventStore(),
+        createWebSocketTransport(url, { reconnectMs: 0 }),
+      );
+      const syncing = reader as ReturnType<typeof createSyncedStore>;
+      for (const root of createdRoots) syncing.syncRoot(root);
+      const converged = await waitFor(async () => {
+        for (const root of createdRoots) {
+          if ((await syncing.byRoot(root)).length < 3) return false; // loom event + 2 turns
+        }
+        return true;
+      });
+      expect(converged).toBe(true);
     } finally {
-      process.off("warning", onWarning);
+      reader?.close();
+      for (const w of writers) w.close();
       await relay.close();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-
-    expect(warnings).toEqual([]);
-  });
+  }, 20_000);
 });

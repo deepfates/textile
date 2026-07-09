@@ -1,12 +1,12 @@
 import type {
   Loom,
   TurnId,
-} from "@lync/core";
+} from "lync-core";
 import type {
   TextStoryLoomMeta,
   TextStoryTurnMeta,
   TextStoryTurnPayload,
-} from "@lync/core/profiles/text-story";
+} from "lync-core/profiles/text-story";
 
 export type StoryTurnPayload = TextStoryTurnPayload;
 export type StoryLoomMeta = TextStoryLoomMeta;

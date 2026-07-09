@@ -3,7 +3,7 @@ import path from "path";
 import {
   attachLyncServer as attachLyncRelay,
   type AttachLyncServerOptions,
-} from "@lync/sync-server";
+} from "lync-server";
 import { hasSiteAccess } from "./siteAuth";
 
 let attached = false;
@@ -38,33 +38,8 @@ export function attachLyncServer(server: http.Server) {
   };
   relay = attachLyncRelay(server, options);
   console.log(`[Lync] relay auth mode: ${authMode}`);
-
-  server.on("upgrade", (request) => {
-    try {
-      const url = new URL(request.url ?? "/", "http://localhost");
-      if (url.pathname === "/lync") {
-        console.log("[Lync] websocket upgrade requested");
-      }
-    } catch {
-      // Ignore malformed upgrade URLs; the relay handles rejection.
-    }
-  });
-
-  relay.server.on("connection", (socket) => {
-    const openConnections = relay?.server.clients.size ?? 0;
-    console.log(`[Lync] websocket connected; open=${openConnections}`);
-    socket.on("close", (code, reason) => {
-      const remainingConnections = relay?.server.clients.size ?? 0;
-      const reasonText = reason?.toString();
-      console.log(
-        `[Lync] websocket closed code=${code} reason=${reasonText} open=${remainingConnections}`,
-      );
-    });
-    socket.on("error", (error) => {
-      console.warn("[Lync] websocket error", error);
-    });
-  });
-
+  // Connection lifecycle and errors are logged by the relay via its `log`
+  // option; the relay owns its WebSocket server internally.
   return relay;
 }
 
