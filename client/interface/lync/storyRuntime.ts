@@ -9,6 +9,7 @@ import {
   type TurnId,
 } from "lync-core";
 import type { EventStore } from "lync-core/store";
+import { loomRootId } from "lync-core/looms";
 import {
   createSyncedStore,
   createWebSocketTransport,
@@ -289,7 +290,27 @@ export async function removeStory(loomId: string): Promise<void> {
   await (await getStoryIndex()).removeLoom(loomId);
 }
 
+// Opening a loom or index touches store.byId(root) before store.byRoot, and
+// byId does not trigger sync — so a fresh context opening a SHARED reference
+// would never pull that root from the relay. Kick off the sync explicitly so
+// the retry loops below actually converge. Idempotent; a no-op on a local-only
+// store (server render) or a root already synced.
+function ensureRootSynced(root: string): void {
+  // Building the client wires up the synced store and sets `eventStore`. A fresh
+  // browser context can open a shared reference before any status subscriber has
+  // constructed the client, so force it here — otherwise eventStore is still null
+  // and the root never gets pulled from the relay.
+  if (!eventStore) getStoryClient();
+  const store = eventStore as (EventStore & { syncRoot?: (root: string) => void }) | null;
+  store?.syncRoot?.(root);
+}
+
+function indexRootId(indexId: string): string {
+  return indexId.startsWith("lore-index:") ? indexId.slice("lore-index:".length) : indexId;
+}
+
 async function openLoomWithRetry(loomId: string): Promise<StoryLoom> {
+  ensureRootSynced(loomRootId(loomId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -303,6 +324,7 @@ async function openLoomWithRetry(loomId: string): Promise<StoryLoom> {
 }
 
 async function openIndexWithRetry(indexId: string): Promise<StoryIndex> {
+  ensureRootSynced(indexRootId(indexId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -316,6 +338,10 @@ async function openIndexWithRetry(indexId: string): Promise<StoryIndex> {
 }
 
 async function openReferenceWithRetry(ref: NonNullable<ReturnType<typeof referenceFromUrl>>) {
+  // Sync the shared reference's root before opening so a fresh browser context
+  // pulls it from the relay.
+  if (ref.kind === "index") ensureRootSynced(indexRootId(ref.indexId));
+  else ensureRootSynced(loomRootId(ref.loomId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
