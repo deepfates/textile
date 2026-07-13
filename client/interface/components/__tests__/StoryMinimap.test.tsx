@@ -55,4 +55,39 @@ describe("StoryMinimap minibuffer authorship", () => {
     expect(html).not.toContain("model · ");
     expect(html).toContain("the frontier line");
   });
+
+  it("shared loom: another person's human turn shows THEIR name, never a false 'you'", () => {
+    const otherHuman: StoryNode = {
+      id: "h2",
+      text: "Cass wrote this line.",
+      continuations: [],
+      origin: "human",
+      actor: "cass",
+      via: "textile-browser",
+    };
+    const sharedRoot: StoryNode = {
+      id: "root2",
+      text: "A shared seed.",
+      continuations: [otherHuman],
+      origin: "human",
+      actor: "ada",
+      via: "textile-browser",
+    };
+    const html = renderToStaticMarkup(
+      <StoryMinimap
+        tree={{ root: sharedRoot }}
+        currentDepth={0}
+        selectedOptions={[0]}
+        currentPath={[sharedRoot, otherHuman]}
+        inFlight={new Set<string>()}
+        generatingInfo={{}}
+        isVisible
+        lastMapNodeId={null}
+        currentNodeId={sharedRoot.id}
+        authorshipDisplay="on"
+      />,
+    );
+    expect(html).toContain("cass · ");
+    expect(html).not.toContain("you · ");
+  });
 });

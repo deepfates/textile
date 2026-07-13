@@ -2,7 +2,7 @@ import { useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { hierarchy } from "d3-hierarchy";
 import { flextree } from "d3-flextree";
 import type { StoryNode } from "../types";
-import type { AuthorshipDisplay } from "../lync/storyRuntime";
+import { getStoryAuthorship, type AuthorshipDisplay } from "../lync/storyRuntime";
 import { originDetail } from "../utils/originDisplay";
 
 type LayoutStoryNode = {
@@ -219,23 +219,31 @@ const Minibuffer = ({
   text,
   node,
   showAuthorship = true,
+  myActor = null,
 }: {
   text: string;
   node?: StoryNode | null;
   showAuthorship?: boolean;
+  myActor?: string | null;
 }) => {
   // Authorship follows the cursor: the node you're standing on says whose it is,
   // in the line that already narrates it. No mark painted across the tree — you
   // learn who wrote a node the same way you learn everything here, by moving onto
   // it. Quiet muted tag; the full actor · via · model lives in the title. The
   // SELECT:CONFIG "Authorship" dial gates the tag (Off hides it, text stays).
+  //
+  // A human node shows the PERSON: "you" only when it's your own actor, the
+  // author's name for anyone else — so on a shared loom another writer's turn
+  // reads as their name, never a false "you".
   const who =
     !showAuthorship || node == null
       ? null
       : node.origin === "model"
         ? "model"
         : node.origin === "human"
-          ? "you"
+          ? node.actor && node.actor !== myActor
+            ? node.actor
+            : "you"
           : "unknown";
   return (
     <div
@@ -267,6 +275,15 @@ export const StoryMinimap = ({
   authorshipDisplay = "on",
 }: StoryMinimapProps) => {
   const { root } = tree;
+  // The current writer's own actor, so the minibuffer can say "you" for your
+  // turns and the real name for anyone else's. Guarded for SSR/no-window.
+  const myActor = useMemo(() => {
+    try {
+      return getStoryAuthorship().actor;
+    } catch {
+      return null;
+    }
+  }, []);
   const coords = useCoords(root);
   const edges = useEdges(root);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -628,6 +645,7 @@ export const StoryMinimap = ({
         }
         node={isSingleNode ? null : (selectedSibling ?? highlightedNode)}
         showAuthorship={authorshipDisplay === "on"}
+        myActor={myActor}
       />
     </div>
   );
