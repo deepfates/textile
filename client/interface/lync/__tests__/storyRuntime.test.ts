@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { createMemoryEventStore } from "@deepfates/lync/memory-log";
+import { createLyncLooms, loomRootId } from "@deepfates/lync/looms";
+import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
 import {
   createStoryIndexShareUrl,
   createStoryFocusShareUrl,
@@ -7,6 +10,8 @@ import {
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
   reduceLyncSyncStatus,
+  resolveAuthorActor,
+  storyAuthorFor,
 } from "../storyRuntime";
 
 describe("story runtime references", () => {
@@ -79,6 +84,83 @@ describe("story runtime references", () => {
     expect(url.searchParams.get("draft")).toBe("1");
     expect(url.searchParams.has("ref")).toBe(false);
     expect(url.hash).toBe("");
+  });
+});
+
+describe("author identity", () => {
+  it("resolves the person's name, else the stable anon id", () => {
+    // A named person carries their own name.
+    expect(resolveAuthorActor("Ada", "anon-1")).toBe("Ada");
+    // Whitespace-only or empty names fall back to the anon id.
+    expect(resolveAuthorActor("   ", "anon-1")).toBe("anon-1");
+    expect(resolveAuthorActor("", "anon-1")).toBe("anon-1");
+    expect(resolveAuthorActor(undefined, "anon-2")).toBe("anon-2");
+    // Two un-named browsers stay distinguishable — never a shared constant.
+    expect(resolveAuthorActor(null, "anon-1")).not.toBe(
+      resolveAuthorActor(null, "anon-2"),
+    );
+  });
+
+  it("keeps actor as the person and via as the controller", () => {
+    expect(storyAuthorFor("Ada", "anon-1")).toEqual({
+      actor: "Ada",
+      via: "textile-browser",
+    });
+    expect(storyAuthorFor("", "anon-xyz")).toEqual({
+      actor: "anon-xyz",
+      via: "textile-browser",
+    });
+  });
+
+  it("writes distinguishable events for two people on one shared loom", async () => {
+    const store = createMemoryEventStore();
+    const named = createLyncLooms<
+      { text: string },
+      { title: string },
+      { role: string }
+    >({ store, author: storyAuthorFor("Ada Lovelace", "anon-unused") });
+    const anon = createLyncLooms<
+      { text: string },
+      { title: string },
+      { role: string }
+    >({ store, author: storyAuthorFor("", "anon-2f9c") });
+
+    // A named person opens a shared story and writes the first human turn.
+    const info = await named.create(
+      textStoryLoomMeta({ title: "Shared" }) as { title: string },
+    );
+    const namedLoom = await named.open(info.id);
+    const seed = await namedLoom.appendTurn(
+      null,
+      { text: "Ada writes." },
+      { role: "prose" },
+    );
+
+    // An un-named collaborator branches from the same loom in the same store.
+    const anonLoom = await anon.open(info.id);
+    await anonLoom.appendTurn(
+      seed.id,
+      { text: "Anon replies." },
+      { role: "prose" },
+    );
+
+    // Read the real appended events back and inspect their authors.
+    const events = await store.byRoot(loomRootId(info.id));
+    const turns = events.filter((e) => e.body.kind === "lync/turn");
+    const actors = turns.map((e) => e.body.author.actor);
+
+    // Two distinct identities produce two distinct actors.
+    expect(turns.length).toBe(2);
+    expect(new Set(actors).size).toBe(2);
+    // A named person's turn carries their name; the anon browser its anon id.
+    expect(actors).toContain("Ada Lovelace");
+    expect(actors).toContain("anon-2f9c");
+    // No human turn is authored as the old hardcoded "textile" constant.
+    expect(actors).not.toContain("textile");
+    // via stays the controller/software on every human turn.
+    for (const turn of turns) {
+      expect(turn.body.author.via).toBe("textile-browser");
+    }
   });
 });
 

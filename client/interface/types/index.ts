@@ -27,8 +27,11 @@ export interface SettingsMenuProps {
     lightTheme: ThemeClass;
     darkTheme: ThemeClass;
     font: FontOption;
+    authorName: string;
   };
   onParamChange: (param: string, value: number | string | boolean) => void;
+  /** Open the interactive editor for the free-text author name. */
+  onEditAuthorName: () => void;
   selectedParam: number;
   onSelectParam?: (index: number) => void;
   isLoading?: boolean;
