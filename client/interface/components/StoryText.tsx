@@ -1,19 +1,11 @@
 import type React from "react";
 import type { StoryNode } from "../types";
-import type { AuthorshipDisplay } from "../lync/storyRuntime";
 
 interface StoryTextProps {
   storyTextRef: React.RefObject<HTMLDivElement>;
   currentPath: StoryNode[];
   currentDepth: number;
   isGeneratingAt: (nodeId: string) => boolean;
-  /**
-   * How loudly authorship touches the reader. Only "detail" tints the prose
-   * (model turns read faintly recessed); "off"/"ambient" leave it UNTOUCHED —
-   * the reading column stays clean by default. The taste call lives in the
-   * SELECT:CONFIG dial, never baked into the reading surface.
-   */
-  authorshipDisplay: AuthorshipDisplay;
 }
 
 export function StoryText({
@@ -21,9 +13,9 @@ export function StoryText({
   currentPath,
   currentDepth,
   isGeneratingAt,
-  authorshipDisplay,
 }: StoryTextProps) {
-  const tint = authorshipDisplay === "detail";
+  // Reading prose is fully untouched by authorship — a loom is a cursor tool,
+  // so you learn who wrote a node in the map minibuffer, not from the prose.
   return (
     <div ref={storyTextRef} className="story-text">
       {currentPath.map((segment, index) => {
@@ -43,12 +35,6 @@ export function StoryText({
         }
         if (isLoading) {
           spanClasses.push("opacity-50");
-        }
-        // Detail mode only: a subtle per-origin tint so model turns read faintly
-        // recessed. Theme-var color-mix, no caption — prose text is unchanged in
-        // every other mode.
-        if (tint) {
-          spanClasses.push(`story-tint--${segment.origin}`);
         }
 
         if (isNextDepth) {

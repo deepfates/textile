@@ -388,20 +388,6 @@ html, body {
   -webkit-box-decoration-break: clone;
 }
 
-/* Detail-mode prose tint — the ONLY place authorship touches the reading
-   surface, and only when the SELECT:CONFIG dial is on Detail. A subtle per-origin
-   recession via theme-var color-mix (no caption); model turns read faintly
-   recessed. The `.story-text` prefix keeps this above the tailwind text-color
-   utility. Human turns read normally; unknown leans muted + italic. */
-.story-text .story-tint--model {
-  color: color-mix(in srgb, var(--theme-text), var(--theme-muted) 45%);
-}
-
-.story-text .story-tint--unknown {
-  color: color-mix(in srgb, var(--theme-text), var(--theme-muted) 55%);
-  font-style: italic;
-}
-
 .story-text::-webkit-scrollbar { width: 6px; }
 .story-text::-webkit-scrollbar-track { background: transparent; }
 .story-text::-webkit-scrollbar-thumb {
@@ -460,65 +446,10 @@ html, body {
   opacity: 0.66;
 }
 
-/* Authorship chip — the quiet ambient human-vs-model signal for the frontier
-   turn, left-anchored in the bottom strip beside the right-anchored sync
-   indicator. Copies the sync register LITERALLY: 0.72rem, low opacity, a leading
-   dot glyph whose theme-var color carries origin, a short token, verbose detail
-   in title/aria only. Theme vars only — survives all 14 themes; no avatars. */
-.story-authorship-status {
-  position: absolute;
-  left: 0.5rem;
-  max-width: min(34vw, 15rem);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--theme-muted);
-  font-size: 0.72rem;
-  line-height: 1;
-  opacity: 0.74;
-  pointer-events: auto;
-  user-select: none;
-}
-
-.story-authorship-status::before {
-  content: "";
-  display: inline-block;
-  width: 0.45em;
-  height: 0.45em;
-  margin-right: 0.45ch;
-  border-radius: 999px;
-  background: currentColor;
-  vertical-align: 0.08em;
-}
-
-.story-authorship-status--model {
-  color: var(--theme-focused-foreground);
-}
-
-.story-authorship-status--human {
-  color: var(--theme-muted);
-}
-
-.story-authorship-status--unknown {
-  color: var(--theme-muted);
-  font-style: italic;
-  opacity: 0.66;
-}
-
 @media (max-width: 520px) {
   .lync-sync-status {
     max-width: 7.5rem;
     font-size: 0.68rem;
-  }
-
-  /* Mobile width budget: keep only the dot glyph — a glyph, not a word. The
-     full detail stays reachable via title/aria-label. */
-  .story-authorship-status {
-    max-width: 7.5rem;
-  }
-
-  .story-authorship-status__word {
-    display: none;
   }
 }
 

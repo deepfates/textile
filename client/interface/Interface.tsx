@@ -72,7 +72,6 @@ import {
   type AuthorshipDisplay,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
-import { AuthorshipIndicator } from "./components/AuthorshipIndicator";
 
 const DEFAULT_PARAMS = {
   temperature: 1.0,
@@ -151,8 +150,8 @@ export const GamepadInterface = () => {
   // The person's display name — their identity on shared looms. Persisted in
   // localStorage and read back by storyRuntime when it binds the lync author.
   const [authorName, setAuthorNameState] = useState<string>(() => getAuthorName());
-  // How loudly authorship is surfaced in the reader. View-only (unlike the
-  // author name it needs no reload), persisted per-browser. Default = ambient.
+  // Whether the map minibuffer narrates the focused node's authorship. View-only
+  // (unlike the author name it needs no reload), persisted per-browser. Default On.
   const [authorshipDisplay, setAuthorshipDisplayState] =
     useState<AuthorshipDisplay>(() => getAuthorshipDisplay());
   const changeAuthorshipDisplay = useCallback((mode: AuthorshipDisplay) => {
@@ -558,7 +557,7 @@ export const GamepadInterface = () => {
           // Free text: only Enter opens the editor; ←→ do nothing.
           if (key === "Enter") editAuthorName();
         } else if (param === "authorshipDisplay") {
-          const modes: AuthorshipDisplay[] = ["off", "ambient", "detail"];
+          const modes: AuthorshipDisplay[] = ["on", "off"];
           changeAuthorshipDisplay(wrap(modes, authorshipDisplay, dir));
         }
       }
@@ -1174,6 +1173,7 @@ export const GamepadInterface = () => {
               isVisible={projection === "map" && screen === null}
               lastMapNodeId={lastMapNodeId}
               currentNodeId={highlightedNode.id}
+              authorshipDisplay={authorshipDisplay}
             />
           ) : screen === "edit" ? (
             <MenuScreen>
@@ -1218,7 +1218,6 @@ export const GamepadInterface = () => {
               currentPath={getCurrentPath()}
               currentDepth={currentDepth}
               isGeneratingAt={isGeneratingAt}
-              authorshipDisplay={authorshipDisplay}
             />
           </div>
 
@@ -1303,12 +1302,6 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
-            {onLoom && projection === "loom" ? (
-              <AuthorshipIndicator
-                node={getCurrentPath()[getCurrentPath().length - 1]}
-                mode={authorshipDisplay}
-              />
-            ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
         </section>

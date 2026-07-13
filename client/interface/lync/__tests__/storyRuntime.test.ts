@@ -258,26 +258,38 @@ describe("authorship-display persistence", () => {
     else (globalThis as { window?: unknown }).window = savedWindow;
   });
 
-  it("defaults to ambient when nothing is stored", () => {
-    expect(getAuthorshipDisplay()).toBe("ambient");
-  });
-
-  it("round-trips a saved mode (persists across a reload)", () => {
-    setAuthorshipDisplay("detail");
-    expect(getAuthorshipDisplay()).toBe("detail");
-    setAuthorshipDisplay("off");
-    expect(getAuthorshipDisplay()).toBe("off");
-  });
-
-  it("falls back to ambient for an unrecognized stored value", () => {
+  const setStored = (value: string) =>
     (
       globalThis as {
         window: { localStorage: { setItem: (k: string, v: string) => void } };
       }
-    ).window.localStorage.setItem(
-      "textile-lync-v1-authorship-display",
-      "loud",
-    );
-    expect(getAuthorshipDisplay()).toBe("ambient");
+    ).window.localStorage.setItem("textile-lync-v1-authorship-display", value);
+
+  it("defaults to on when nothing is stored", () => {
+    expect(getAuthorshipDisplay()).toBe("on");
+  });
+
+  it("round-trips a saved mode (persists across a reload)", () => {
+    setAuthorshipDisplay("off");
+    expect(getAuthorshipDisplay()).toBe("off");
+    setAuthorshipDisplay("on");
+    expect(getAuthorshipDisplay()).toBe("on");
+  });
+
+  it("migrates the old three-value dial: ambient/detail collapse to on", () => {
+    setStored("ambient");
+    expect(getAuthorshipDisplay()).toBe("on");
+    setStored("detail");
+    expect(getAuthorshipDisplay()).toBe("on");
+  });
+
+  it("keeps a stored off as off", () => {
+    setStored("off");
+    expect(getAuthorshipDisplay()).toBe("off");
+  });
+
+  it("falls back to on for an unrecognized stored value", () => {
+    setStored("loud");
+    expect(getAuthorshipDisplay()).toBe("on");
   });
 });

@@ -3,20 +3,14 @@ import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StoryText } from "../StoryText";
 import type { StoryNode } from "../../types";
-import type { AuthorshipDisplay } from "../../lync/storyRuntime";
 
-function render(
-  path: StoryNode[],
-  currentDepth: number,
-  authorshipDisplay: AuthorshipDisplay = "ambient",
-): string {
+function render(path: StoryNode[], currentDepth: number): string {
   return renderToStaticMarkup(
     <StoryText
       storyTextRef={createRef<HTMLDivElement>()}
       currentPath={path}
       currentDepth={currentDepth}
       isGeneratingAt={() => false}
-      authorshipDisplay={authorshipDisplay}
     />,
   );
 }
@@ -77,35 +71,16 @@ describe("StoryText prose surface", () => {
     expect(html).toContain('data-actor="grace"');
   });
 
-  it("renders NO author byline in the reading column by default (Ambient)", () => {
-    const html = render([human, model], 1);
-    // Re-homed to the status strip: the prose column stays clean. None of the
-    // old byline class, spelled-out label, or detail line appears in the prose.
+  it("leaves the reading prose fully untouched by authorship", () => {
+    // A loom is a cursor tool: you learn who wrote a node in the map minibuffer,
+    // never from the prose. No byline, no tint, no origin caption in the column.
+    const html = render([human, model, unknown], 1);
     expect(html).not.toContain("story-origin");
+    // No prose tint and no authorship chip in the reading column. Matched by
+    // regex so this assertion does not itself reintroduce those class literals.
+    expect(html).not.toMatch(/story-(tint|authorship)/);
     expect(html).not.toContain("model · test-model");
     expect(html).not.toContain("origin: model");
     expect(html).not.toContain("via: textile-browser");
-  });
-
-  it("renders NO byline and NO tint in Off mode", () => {
-    const html = render([human, model], 1, "off");
-    expect(html).not.toContain("story-origin");
-    expect(html).not.toContain("story-tint");
-  });
-
-  it("adds a per-origin prose tint class ONLY in Detail mode", () => {
-    const ambient = render([human, model], 1, "ambient");
-    expect(ambient).not.toContain("story-tint");
-
-    const detail = render([human, model], 1, "detail");
-    expect(detail).toContain("story-tint--human");
-    expect(detail).toContain("story-tint--model");
-    // Still no caption — Detail tints, it does not spell out under the prose.
-    expect(detail).not.toContain("story-origin");
-  });
-
-  it("tints an unknown turn in Detail mode too", () => {
-    const detail = render([unknown], 0, "detail");
-    expect(detail).toContain("story-tint--unknown");
   });
 });

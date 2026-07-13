@@ -2,6 +2,7 @@ import { useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { hierarchy } from "d3-hierarchy";
 import { flextree } from "d3-flextree";
 import type { StoryNode } from "../types";
+import type { AuthorshipDisplay } from "../lync/storyRuntime";
 import { originDetail } from "../utils/originDisplay";
 
 type LayoutStoryNode = {
@@ -63,6 +64,13 @@ interface StoryMinimapProps {
    * The ID of the currently highlighted node.
    */
   currentNodeId: string;
+  /**
+   * Whether the minibuffer narrates the focused node's authorship. "on" shows
+   * the "<who> · " tag; "off" shows just the node text. Default "on" — set by
+   * the SELECT:CONFIG "Authorship" dial. Authorship is a cursor tool: this is
+   * the ONLY place it surfaces.
+   */
+  authorshipDisplay?: AuthorshipDisplay;
 }
 
 /**
@@ -207,13 +215,22 @@ function useEdges(root: StoryNode) {
 /**
  * Terminal-style minibuffer at bottom of map
  */
-const Minibuffer = ({ text, node }: { text: string; node?: StoryNode | null }) => {
+const Minibuffer = ({
+  text,
+  node,
+  showAuthorship = true,
+}: {
+  text: string;
+  node?: StoryNode | null;
+  showAuthorship?: boolean;
+}) => {
   // Authorship follows the cursor: the node you're standing on says whose it is,
   // in the line that already narrates it. No mark painted across the tree — you
   // learn who wrote a node the same way you learn everything here, by moving onto
-  // it. Quiet muted tag; the full actor · via · model lives in the title.
+  // it. Quiet muted tag; the full actor · via · model lives in the title. The
+  // SELECT:CONFIG "Authorship" dial gates the tag (Off hides it, text stays).
   const who =
-    node == null
+    !showAuthorship || node == null
       ? null
       : node.origin === "model"
         ? "model"
@@ -223,7 +240,7 @@ const Minibuffer = ({ text, node }: { text: string; node?: StoryNode | null }) =
   return (
     <div
       className="minimap-minibuffer"
-      title={node ? originDetail(node) : undefined}
+      title={who && node ? originDetail(node) : undefined}
     >
       <div className="minimap-minibuffer-text">
         {who && <span className="minimap-minibuffer-who">{who} · </span>}
@@ -247,6 +264,7 @@ export const StoryMinimap = ({
   isVisible,
   lastMapNodeId,
   currentNodeId,
+  authorshipDisplay = "on",
 }: StoryMinimapProps) => {
   const { root } = tree;
   const coords = useCoords(root);
@@ -609,6 +627,7 @@ export const StoryMinimap = ({
             : highlightedNode.text.split("\n")[0]
         }
         node={isSingleNode ? null : (selectedSibling ?? highlightedNode)}
+        showAuthorship={authorshipDisplay === "on"}
       />
     </div>
   );
