@@ -14,10 +14,6 @@
   },
   "dependencies": {
     "@ax-llm/ax": "^14.0.39",
-    "@lync/client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-    "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
-    "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-    "@lync/sync-server": "file:vendor/lync-packages/lync-sync-server-0.1.0.tgz",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/d3-flextree": "^2.1.4",
     "@types/express": "^4.17.21",
@@ -42,7 +38,9 @@
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "wouter": "^3.3.5",
-    "yargs": "^17.7.2"
+    "ws": "^8.18.0",
+    "yargs": "^17.7.2",
+    "@deepfates/lync": "0.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
@@ -59,10 +57,6 @@
     "typescript": "^5.2.2",
     "vite": "^5.2.8",
     "vite-plugin-pwa": "^1.0.1"
-  },
-  "overrides": {
-    "@lync/core": "file:vendor/lync-packages/lync-core-0.2.0-browser-lore.tgz",
-    "@lync/index": "file:vendor/lync-packages/lync-index-0.2.0.tgz"
   },
   "patchedDependencies": {
     "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch"

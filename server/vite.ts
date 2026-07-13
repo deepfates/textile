@@ -340,9 +340,18 @@ function installShutdownHandlers(httpServer: http.Server) {
 
     try {
       await closeLyncServer();
+      // Force-drop any lingering connections (vite HMR sockets, the upgraded
+      // Lync websocket, HTTP keep-alives) so httpServer.close() can complete
+      // instead of waiting out the 25s force-exit — otherwise a dev/probe
+      // shutdown after Lync websocket activity hangs and exits 1 (dee-9rxj).
+      (httpServer as { closeAllConnections?: () => void }).closeAllConnections?.();
       await new Promise<void>((resolve, reject) => {
         httpServer.close((error?: Error) => {
-          if (error) reject(error);
+          // After closeAllConnections the server is already stopped under some
+          // runtimes (bun reports "Server is not running") — that IS the goal,
+          // so treat an already-stopped close as success and reject only on a
+          // genuine error.
+          if (error && !/not running/i.test(error.message)) reject(error);
           else resolve();
         });
       });

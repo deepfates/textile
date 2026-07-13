@@ -1,21 +1,28 @@
 import {
   createIndexedDbEventStore,
-  createLoreLooms,
+  createLyncLooms,
   createMemoryEventStore,
   referenceFromUrl,
   referenceToUrl,
   type LoomReference,
   type Looms,
   type TurnId,
-} from "@lync/core";
-import type { EventStore } from "@lync/core/lore/store";
+} from "@deepfates/lync";
+import type { EventStore } from "@deepfates/lync/store";
+import { loomRootId } from "@deepfates/lync/looms";
+import {
+  createSyncedStore,
+  createWebSocketTransport,
+  type SyncStatus,
+  type SyncTransport,
+} from "@deepfates/lync/synced-store";
 import {
   isTextStoryLoomMeta,
   textStoryLoomMeta,
-} from "@lync/core/profiles/text-story";
-import { createLoomClient } from "@lync/client";
-import { upsertLoom } from "@lync/index/entries";
-import type { LoomIndex } from "@lync/index";
+} from "@deepfates/lync/profiles/text-story";
+import { createLoomClient } from "@deepfates/lync/client";
+import { upsertLoom } from "@deepfates/lync/indexes/entries";
+import type { LoomIndex } from "@deepfates/lync/indexes";
 import { createLoreLoomIndexes } from "./loreIndex";
 import type {
   StoryEntryMeta,
@@ -57,8 +64,6 @@ let indexPromise: Promise<StoryIndex> | null = null;
 let eventStore: EventStore | null = null;
 let serverLoreImportPromise: Promise<void> | null = null;
 let syncMonitorStarted = false;
-let syncSocket: WebSocket | null = null;
-let syncReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const syncListeners = new Set<() => void>();
 let syncSnapshot: LyncSyncSnapshot = {
   state: "local-only",
@@ -69,17 +74,31 @@ const INDEX_STORAGE_KEY = "textile-lync-v1-index-id";
 const LORE_IMPORT_STORAGE_KEY = "textile-lync-v1-server-lore-imported";
 const STORAGE_NAMESPACE = "textile-lync-v1";
 const LORE_AUTHOR = { actor: "textile", via: "textile-browser" };
-const SYNC_RECONNECT_MS = 2_500;
+
+function buildSyncTransport(): SyncTransport | null {
+  if (typeof window === "undefined") return null;
+  if (!("WebSocket" in window)) return null;
+  if (window.location.protocol === "file:") return null;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return createWebSocketTransport(`${protocol}//${window.location.host}/lync`);
+}
 
 function getStoryClient() {
   client ??= (() => {
-    const store =
+    const base =
       typeof window === "undefined"
         ? createMemoryEventStore()
         : createIndexedDbEventStore({
             dbName: STORAGE_NAMESPACE,
             indexedDB: window.indexedDB,
           });
+    // In the browser, wrap the store in live sync: local appends push to the
+    // relay and remote turns arrive through union, so looms and the index
+    // update reactively. The transport owns connection and reconnect.
+    const transport = buildSyncTransport();
+    const store = transport
+      ? createSyncedStore(base, transport, { onStatus: applySyncStatus })
+      : base;
     eventStore = store;
     return createLoomClient<
       StoryTurnPayload,
@@ -88,7 +107,7 @@ function getStoryClient() {
       StoryEntryMeta,
       { app: "textile" }
     >({
-      looms: createLoreLooms<StoryTurnPayload, StoryLoomMeta, StoryTurnMeta>({
+      looms: createLyncLooms<StoryTurnPayload, StoryLoomMeta, StoryTurnMeta>({
         store,
         author: LORE_AUTHOR,
       }),
@@ -271,7 +290,27 @@ export async function removeStory(loomId: string): Promise<void> {
   await (await getStoryIndex()).removeLoom(loomId);
 }
 
+// Opening a loom or index touches store.byId(root) before store.byRoot, and
+// byId does not trigger sync — so a fresh context opening a SHARED reference
+// would never pull that root from the relay. Kick off the sync explicitly so
+// the retry loops below actually converge. Idempotent; a no-op on a local-only
+// store (server render) or a root already synced.
+function ensureRootSynced(root: string): void {
+  // Building the client wires up the synced store and sets `eventStore`. A fresh
+  // browser context can open a shared reference before any status subscriber has
+  // constructed the client, so force it here — otherwise eventStore is still null
+  // and the root never gets pulled from the relay.
+  if (!eventStore) getStoryClient();
+  const store = eventStore as (EventStore & { syncRoot?: (root: string) => void }) | null;
+  store?.syncRoot?.(root);
+}
+
+function indexRootId(indexId: string): string {
+  return indexId.startsWith("lore-index:") ? indexId.slice("lore-index:".length) : indexId;
+}
+
 async function openLoomWithRetry(loomId: string): Promise<StoryLoom> {
+  ensureRootSynced(loomRootId(loomId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -285,6 +324,7 @@ async function openLoomWithRetry(loomId: string): Promise<StoryLoom> {
 }
 
 async function openIndexWithRetry(indexId: string): Promise<StoryIndex> {
+  ensureRootSynced(indexRootId(indexId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -298,6 +338,10 @@ async function openIndexWithRetry(indexId: string): Promise<StoryIndex> {
 }
 
 async function openReferenceWithRetry(ref: NonNullable<ReturnType<typeof referenceFromUrl>>) {
+  // Sync the shared reference's root before opening so a fresh browser context
+  // pulls it from the relay.
+  if (ref.kind === "index") ensureRootSynced(indexRootId(ref.indexId));
+  else ensureRootSynced(loomRootId(ref.loomId));
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
@@ -321,6 +365,12 @@ function emitLyncSyncEvent(event: LyncSyncEvent) {
   for (const listener of syncListeners) listener();
 }
 
+function applySyncStatus(status: SyncStatus) {
+  if (status.connection === "online") emitLyncSyncEvent({ type: "connected" });
+  else if (status.connection === "connecting") emitLyncSyncEvent({ type: "connecting" });
+  else emitLyncSyncEvent({ type: "disconnected" });
+}
+
 function startLyncSyncMonitor() {
   if (syncMonitorStarted) return;
   syncMonitorStarted = true;
@@ -331,105 +381,18 @@ function startLyncSyncMonitor() {
     });
     return;
   }
-
-  if (!("WebSocket" in window)) {
+  if (!("WebSocket" in window) || window.location.protocol === "file:") {
     emitLyncSyncEvent({
       type: "local-only",
-      detail: "This browser cannot open the Lync relay.",
+      detail: "No Lync relay is available in this context.",
     });
     return;
   }
-
-  const handleOffline = () => {
-    clearLyncReconnect();
-    closeLyncSocket();
-    emitLyncSyncEvent({
-      type: "local-only",
-      detail: "Browser is offline; stories are local only.",
-    });
-  };
-  const handleOnline = () => {
-    connectLyncSocket();
-  };
-  window.addEventListener("offline", handleOffline);
-  window.addEventListener("online", handleOnline);
-  connectLyncSocket();
-}
-
-function connectLyncSocket() {
-  if (typeof window === "undefined") return;
-  if (window.location.protocol === "file:") {
-    emitLyncSyncEvent({
-      type: "local-only",
-      detail: "No Lync relay is available from a local file.",
-    });
-    return;
-  }
-  if (window.navigator && !window.navigator.onLine) {
-    emitLyncSyncEvent({
-      type: "local-only",
-      detail: "Browser is offline; stories are local only.",
-    });
-    return;
-  }
-  if (syncSocket && syncSocket.readyState !== WebSocket.CLOSED) return;
-
-  clearLyncReconnect();
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${protocol}//${window.location.host}/lync`;
+  // Constructing the client builds its synced store and transport; the
+  // transport connects and reconnects on its own, and applySyncStatus keeps
+  // the snapshot current.
   emitLyncSyncEvent({ type: "connecting" });
-
-  try {
-    const socket = new WebSocket(url);
-    syncSocket = socket;
-    socket.addEventListener("open", () => {
-      if (syncSocket !== socket) return;
-      emitLyncSyncEvent({ type: "connected" });
-    });
-    socket.addEventListener("close", () => {
-      if (syncSocket !== socket) return;
-      syncSocket = null;
-      emitLyncSyncEvent({ type: "disconnected" });
-      scheduleLyncReconnect();
-    });
-    socket.addEventListener("error", () => {
-      if (syncSocket !== socket) return;
-      emitLyncSyncEvent({ type: "disconnected" });
-    });
-  } catch {
-    syncSocket = null;
-    emitLyncSyncEvent({ type: "disconnected" });
-    scheduleLyncReconnect();
-  }
-}
-
-function scheduleLyncReconnect() {
-  if (typeof window === "undefined") return;
-  if (window.navigator && !window.navigator.onLine) {
-    emitLyncSyncEvent({
-      type: "local-only",
-      detail: "Browser is offline; stories are local only.",
-    });
-    return;
-  }
-  if (syncReconnectTimer) return;
-  syncReconnectTimer = setTimeout(() => {
-    syncReconnectTimer = null;
-    connectLyncSocket();
-  }, SYNC_RECONNECT_MS);
-}
-
-function clearLyncReconnect() {
-  if (!syncReconnectTimer) return;
-  clearTimeout(syncReconnectTimer);
-  syncReconnectTimer = null;
-}
-
-function closeLyncSocket() {
-  const socket = syncSocket;
-  syncSocket = null;
-  if (!socket || socket.readyState === WebSocket.CLOSED) return;
-  socket.close();
+  getStoryClient();
 }
 
 async function importServerLoreIfNeeded(): Promise<void> {
@@ -463,7 +426,7 @@ async function addImportedLoreLoomsToIndex(index: StoryIndex): Promise<void> {
   if (!store) return;
   const roots = await store.roots("lync/loom");
   for (const root of roots) {
-    const loomId = `lore:${root.body.id}`;
+    const loomId = `lync:${root.body.id}`;
     const loom = await getStoryClient().looms.open(loomId).catch(() => null);
     const info = await loom?.info().catch(() => null);
     if (!info || !isTextStoryLoomMeta(info.meta)) continue;

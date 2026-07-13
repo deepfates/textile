@@ -5,9 +5,9 @@ import {
   type IndexId,
   type LoomId,
   type LoomReference,
-} from "@lync/core";
-import type { LoreEventBody } from "@lync/core/lore/events";
-import type { EventStore, StoredEvent } from "@lync/core/lore/store";
+} from "@deepfates/lync";
+import type { LyncEventBody } from "@deepfates/lync/events";
+import type { EventStore, StoredEvent } from "@deepfates/lync/store";
 import type {
   LoomIndex,
   LoomIndexEntry,
@@ -18,7 +18,7 @@ import type {
   LoomIndexListener,
   LoomIndexes,
   LoomIndexSnapshot,
-} from "@lync/index";
+} from "@deepfates/lync/indexes";
 
 type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
 
@@ -57,7 +57,7 @@ export function createLoreLoomIndexes<TEntryMeta = unknown, TIndexMeta = unknown
     payload: Record<string, unknown>,
     atMs = now(),
     author = options.author,
-  ): LoreEventBody => ({
+  ): LyncEventBody => ({
     v: 1,
     id: createId(),
     kind,
@@ -118,7 +118,7 @@ class LoreIndex<TEntryMeta, TIndexMeta> implements LoomIndex<TEntryMeta, TIndexM
       parents: string[],
       payload: Record<string, unknown>,
       atMs?: number,
-    ) => LoreEventBody,
+    ) => LyncEventBody,
     private readonly now: () => number,
   ) {
     this.unsubscribe = store.subscribe(root, async (event) => {
@@ -344,7 +344,7 @@ function validateAuthor(author: LoreIndexAuthor): void {
   }
 }
 
-function compactAuthor(author: LoreIndexAuthor): LoreEventBody["author"] {
+function compactAuthor(author: LoreIndexAuthor): LyncEventBody["author"] {
   return omitUndefined({
     actor: author.actor,
     operator: author.operator || undefined,

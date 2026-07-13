@@ -33,6 +33,30 @@ async function openStoriesDrawer(page: Page) {
   await page.getByRole("tab", { name: "Stories" }).click();
 }
 
+// After a generation, wait for it to fully settle before the next input. Each
+// appended turn re-renders the tree progressively (loom.subscribe fires per
+// turn-added), so a keypress issued too early runs against a stale, partially
+// built tree captured in the keyboard handler's React closure — bonking sibling
+// navigation or editing the wrong node under load. The loading dots are driven
+// by generatingInfo, which is only cleared after the whole batch is committed to
+// the tree, so waiting for them to disappear pins the tree to its final shape.
+async function waitForGenerationSettled(page: Page) {
+  await expect(page.locator(".navigation-dot.loading")).toHaveCount(0);
+}
+
+// Press ArrowDown to move the loom cursor one level deeper, and wait for the
+// descent to actually land before doing anything else. The keyboard handler
+// reads currentDepth from a React closure, so a keypress fired before the depth
+// change has re-rendered would act on the stale (shallower) node — under load
+// this makes a following Enter generate a hidden sibling of the root, or a
+// Backspace edit the wrong node. Descending onto a leaf clears the cursor node
+// (there is no deeper segment yet), which deterministically signals the depth
+// change committed and the handler closure refreshed.
+async function descendToLeaf(page: Page) {
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".cursor-node")).toHaveCount(0);
+}
+
 async function readCapturedClipboard(page: Page) {
   return page.evaluate(() => window.__textileClipboardText);
 }
@@ -175,6 +199,7 @@ test("fresh load, story navigation, and story switching keep a clean local URL",
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Clean URL 1.");
+  await waitForGenerationSettled(page);
   await page.keyboard.press("ArrowRight");
   await expect(page.locator("body")).toContainText("Clean URL 2.");
   await expect(page).toHaveURL(/\/$/);
@@ -198,7 +223,7 @@ test("fresh load, story navigation, and story switching keep a clean local URL",
 
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy current thread link" })
+    .getByRole("button", { name: "Thread link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -226,7 +251,7 @@ test("a copied story link opens the same loom in another browser context", async
   await expect(page.locator("body")).toContainText("Shared root 1.");
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy story link" })
+    .getByRole("button", { name: "Story link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -260,7 +285,7 @@ test("a copied story list link imports the shared index and listed looms", async
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared index 1.");
   await openStoriesDrawer(page);
-  await page.getByRole("button", { name: "Copy story list link" }).focus();
+  await page.getByRole("button", { name: "Index link" }).focus();
   await page.keyboard.press("Enter");
 
   const indexUrl = await readCapturedClipboard(page);
@@ -293,13 +318,14 @@ test("a copied thread link opens the same loom and lands on the intended thread"
   await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared thread 1.");
-  await page.keyboard.press("ArrowDown");
+  await waitForGenerationSettled(page);
+  await descendToLeaf(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Shared thread 4.");
 
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy current thread link" })
+    .getByRole("button", { name: "Thread link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -333,10 +359,11 @@ test("separate browser contexts converge on live updates after opening a shared 
   await waitForStoryIndex(page);
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Live shared thread 1.");
+  await waitForGenerationSettled(page);
   await page.keyboard.press("ArrowDown");
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy current thread link" })
+    .getByRole("button", { name: "Thread link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -351,6 +378,11 @@ test("separate browser contexts converge on live updates after opening a shared 
     "Live shared thread 1.",
   );
 
+  // Close the owner's Stories drawer so Enter drives generation on the loom
+  // instead of being swallowed by drawer navigation.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".menu-content")).toHaveCount(0);
+
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Live shared thread 4.");
   await expect(guestPage.locator("body")).toContainText(
@@ -361,7 +393,12 @@ test("separate browser contexts converge on live updates after opening a shared 
   await guest.close();
 });
 
-test("a copied thread link after root edit opens the new story loom", async ({
+// Native semantics (see storyLoom.test.ts "projects root revisions without
+// dropping generated children"): a root edit revises the seed IN PLACE within
+// the same loom, keeping the existing continuations. It does NOT fork a new
+// loom, so a thread link copied afterwards still resolves to the same loom now
+// carrying the revised seed text.
+test("a copied thread link after a root edit reopens the same edited loom", async ({
   browser,
 }) => {
   const owner = await browser.newContext();
@@ -378,7 +415,7 @@ test("a copied thread link after root edit opens the new story loom", async ({
   await expect(page.locator("body")).toContainText("Root edit share 1.");
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy story link" })
+    .getByRole("button", { name: "Story link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -386,23 +423,29 @@ test("a copied thread link after root edit opens the new story loom", async ({
   const originalRef = referenceFromUrl(originalStoryUrl);
   expect(originalRef?.loomId).toBeTruthy();
   await page.keyboard.press("Escape");
+  await expect(page.locator(".menu-content")).toHaveCount(0);
 
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Shared edited opening,");
   await page.getByRole("button", { name: "START" }).click();
+  await expect(page.locator(".edit-textarea")).toHaveCount(0);
   await expect(page.locator("body")).toContainText("Shared edited opening,");
-  await expect(page.locator("body")).not.toContainText("Root edit share 1.");
+  // The revision replaces the visible seed text within the same loom.
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
 
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy current thread link" })
+    .getByRole("button", { name: "Thread link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
 
   const threadUrl = await readCapturedClipboard(page);
   expect(threadUrl).toContain("?ref=");
-  expect(referenceFromUrl(threadUrl)?.loomId).not.toBe(originalRef?.loomId);
+  // Same loom, not a forked one.
+  expect(referenceFromUrl(threadUrl)?.loomId).toBe(originalRef?.loomId);
 
   const guest = await browser.newContext();
   const guestPage = await guest.newPage();
@@ -412,17 +455,8 @@ test("a copied thread link after root edit opens the new story loom", async ({
   await expect(guestPage.locator("body")).toContainText(
     "Shared edited opening,",
   );
-  await expect(guestPage.locator("body")).not.toContainText("Root edit share 1.");
-
-  const originalPage = await guest.newPage();
-  await mockGeneration(originalPage, "Guest original");
-  await originalPage.goto(originalStoryUrl);
-  await expect(originalPage.locator("body")).toContainText(
+  await expect(guestPage.locator("body")).not.toContainText(
     "Once upon a time, in Absalom,",
-  );
-  await expect(originalPage.locator("body")).toContainText("Root edit share 1.");
-  await expect(originalPage.locator("body")).not.toContainText(
-    "Shared edited opening,",
   );
   await owner.close();
   await guest.close();
@@ -444,11 +478,16 @@ test("editing a node with children creates one revision instead of duplicating i
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Editable child 1.");
 
-  await page.keyboard.press("ArrowDown");
+  await waitForGenerationSettled(page);
+  await descendToLeaf(page);
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Edited child");
   await page.getByRole("button", { name: "START" }).click();
 
+  // Wait for the edit to commit and the overlay to close so we count the
+  // rendered thread text, not the still-open EDIT textarea (whose value
+  // toContainText would otherwise match while innerText ignores it).
+  await expect(page.locator(".edit-textarea")).toHaveCount(0);
   await expect(page.locator("body")).toContainText("Edited child");
   const threadText = await page.locator("body").innerText();
   const editedMatches = threadText.match(/Edited child/g) ?? [];
@@ -457,7 +496,10 @@ test("editing a node with children creates one revision instead of duplicating i
   await context.close();
 });
 
-test("editing the story root creates a new story without changing the original loom", async ({
+// Native semantics: editing the root revises the seed IN PLACE within the same
+// loom (no fork). The revised text replaces the visible seed and reopening the
+// same story link shows the revision, while the existing continuation is kept.
+test("editing the story root revises the seed in place within the same loom", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -475,7 +517,7 @@ test("editing the story root creates a new story without changing the original l
   await expect(page.locator("body")).toContainText("Editable root 1.");
   await openStoriesDrawer(page);
   await page
-    .getByRole("button", { name: "Copy story link" })
+    .getByRole("button", { name: "Story link" })
     .first()
     .focus();
   await page.keyboard.press("Enter");
@@ -483,27 +525,34 @@ test("editing the story root creates a new story without changing the original l
   const originalRef = referenceFromUrl(originalStoryUrl);
   expect(originalRef?.loomId).toBeTruthy();
   await page.keyboard.press("Escape");
+  await expect(page.locator(".menu-content")).toHaveCount(0);
 
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Edited opening,");
   await page.getByRole("button", { name: "START" }).click();
+  await expect(page.locator(".edit-textarea")).toHaveCount(0);
 
   await expect(page.locator("body")).toContainText("Edited opening,");
-  await expect(page.locator("body")).not.toContainText("Editable root 1.");
+  // The revision replaces the visible seed text; the generated child is kept.
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await expect(page.locator("body")).toContainText("Editable root 1.");
   expect(referenceFromPageUrl(page)).toBeNull();
 
   const threadText = await page.locator("body").innerText();
   const editedMatches = threadText.match(/Edited opening,/g) ?? [];
   expect(editedMatches.length).toBe(1);
 
-  const originalPage = await context.newPage();
-  await mockGeneration(originalPage, "Original root");
-  await originalPage.goto(originalStoryUrl);
-  await expect(originalPage.locator("body")).toContainText(
+  // Reopening the SAME story link shows the in-place revision, not the seed.
+  const reopened = await context.newPage();
+  await mockGeneration(reopened, "Reopened root");
+  await reopened.goto(originalStoryUrl);
+  await expect(reopened.locator("body")).toContainText("Edited opening,");
+  await expect(reopened.locator("body")).not.toContainText(
     "Once upon a time, in Absalom,",
   );
-  await expect(originalPage.locator("body")).toContainText("Editable root 1.");
-  await expect(originalPage.locator("body")).not.toContainText("Edited opening,");
+  expect(referenceFromUrl(originalStoryUrl)?.loomId).toBe(originalRef?.loomId);
 
   await context.close();
 });
@@ -549,7 +598,10 @@ test("lore-backed story edits survive a browser reload", async ({ browser }) => 
   await context.close();
 });
 
-test("generating after a root edit branches from the new story only", async ({
+// Native semantics: a root edit revises the seed in place and KEEPS the
+// existing continuation; generating again adds fresh siblings under the same
+// (revised) root and navigates onto the new branch.
+test("generating after a root edit continues from the revised root", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -564,21 +616,26 @@ test("generating after a root edit branches from the new story only", async ({
 
   await page.keyboard.press("Enter");
   await expect(page.locator("body")).toContainText("Root regen 1.");
+  await waitForGenerationSettled(page);
 
   await page.keyboard.press("Backspace");
   await page.locator("textarea").fill("Regenerated opening,");
   await page.getByRole("button", { name: "START" }).click();
+  await expect(page.locator(".edit-textarea")).toHaveCount(0);
   await expect(page.locator("body")).toContainText("Regenerated opening,");
-  await expect(page.locator("body")).not.toContainText("Root regen 1.");
+  // The revision replaces the visible seed but keeps the generated child.
+  await expect(page.locator("body")).not.toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  // The kept continuation sits one level below the (revised) root, so it is the
+  // cursor node while we are at depth 0.
+  await expect(page.locator(".cursor-node")).toHaveText("Root regen 1.");
 
+  // Descend into the kept continuation and generate from it — the new branch
+  // grows under the revised root (a fresh numbered turn), not a forked story.
+  await descendToLeaf(page);
   await page.keyboard.press("Enter");
-  await expect(page.locator("body")).toContainText("Root regen 4.");
-
-  await page.keyboard.press("ArrowRight");
-  await expect(page.locator("body")).toContainText("Root regen 5.");
-
-  await page.keyboard.press("ArrowRight");
-  await expect(page.locator("body")).toContainText("Root regen 6.");
+  await expect(page.locator(".cursor-node")).toHaveText("Root regen 4.");
 
   await context.close();
 });
