@@ -838,6 +838,13 @@ html, body {
   white-space: nowrap;
 }
 
+/* Authorship of the focused node, spoken in the line that already narrates it.
+   A muted secondary attribute — not the accent (that means focus); the word
+   carries the meaning. Theme-var so it survives every theme. */
+.minimap-minibuffer-who {
+  color: var(--theme-muted);
+}
+
 .minimap-node.generating {
   animation: pulse 1s infinite;
 }
