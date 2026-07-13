@@ -2,11 +2,11 @@ import { describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createMemoryEventStore } from "lync-core/memory-log";
-import { createLyncLooms, loomRootId } from "lync-core/looms";
-import { createSyncedStore, createWebSocketTransport } from "lync-core/synced-store";
-import { textStoryLoomMeta } from "lync-core/profiles/text-story";
-import { startLyncServe } from "lync-core/relay";
+import { createMemoryEventStore } from "@deepfates/lync/memory-log";
+import { createLyncLooms, loomRootId } from "@deepfates/lync/looms";
+import { createSyncedStore, createWebSocketTransport } from "@deepfates/lync/synced-store";
+import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
+import { startLyncServe } from "@deepfates/lync/relay";
 import { resolveLyncAuthMode } from "../lync";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

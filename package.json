@@ -40,7 +40,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "yargs": "^17.7.2",
-    "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
+    "@deepfates/lync": "0.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
@@ -58,15 +58,7 @@
     "vite": "^5.2.8",
     "vite-plugin-pwa": "^1.0.1"
   },
-  "overrides": {
-    "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
-  },
   "patchedDependencies": {
     "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch"
-  },
-  "pnpm": {
-    "overrides": {
-      "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
-    }
   }
 }

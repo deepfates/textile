@@ -7,22 +7,22 @@ import {
   type LoomReference,
   type Looms,
   type TurnId,
-} from "lync-core";
-import type { EventStore } from "lync-core/store";
-import { loomRootId } from "lync-core/looms";
+} from "@deepfates/lync";
+import type { EventStore } from "@deepfates/lync/store";
+import { loomRootId } from "@deepfates/lync/looms";
 import {
   createSyncedStore,
   createWebSocketTransport,
   type SyncStatus,
   type SyncTransport,
-} from "lync-core/synced-store";
+} from "@deepfates/lync/synced-store";
 import {
   isTextStoryLoomMeta,
   textStoryLoomMeta,
-} from "lync-core/profiles/text-story";
-import { createLoomClient } from "lync-core/client";
-import { upsertLoom } from "lync-core/indexes/entries";
-import type { LoomIndex } from "lync-core/indexes";
+} from "@deepfates/lync/profiles/text-story";
+import { createLoomClient } from "@deepfates/lync/client";
+import { upsertLoom } from "@deepfates/lync/indexes/entries";
+import type { LoomIndex } from "@deepfates/lync/indexes";
 import { createLoreLoomIndexes } from "./loreIndex";
 import type {
   StoryEntryMeta,

@@ -5,9 +5,9 @@ import {
   type IndexId,
   type LoomId,
   type LoomReference,
-} from "lync-core";
-import type { LyncEventBody } from "lync-core/events";
-import type { EventStore, StoredEvent } from "lync-core/store";
+} from "@deepfates/lync";
+import type { LyncEventBody } from "@deepfates/lync/events";
+import type { EventStore, StoredEvent } from "@deepfates/lync/store";
 import type {
   LoomIndex,
   LoomIndexEntry,
@@ -18,7 +18,7 @@ import type {
   LoomIndexListener,
   LoomIndexes,
   LoomIndexSnapshot,
-} from "lync-core/indexes";
+} from "@deepfates/lync/indexes";
 
 type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
 

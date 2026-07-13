@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createTestLoomClient } from "lync-core/client/testing";
-import { textStoryLoomMeta } from "lync-core/profiles/text-story";
+import { createTestLoomClient } from "@deepfates/lync/client/testing";
+import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
 import {
   appendStoryDrafts,
   appendStoryRevision,
