@@ -68,8 +68,8 @@ describe("chooseInitialStoryKey", () => {
   const loaded = {
     orderedIds: ["story-a", "story-b"],
     trees: {
-      "story-a": { root: { id: "a", text: "A", continuations: [] } },
-      "story-b": { root: { id: "b", text: "B", continuations: [] } },
+      "story-a": { root: { id: "a", text: "A", continuations: [], origin: "unknown" as const } },
+      "story-b": { root: { id: "b", text: "B", continuations: [], origin: "unknown" as const } },
     },
   };
 

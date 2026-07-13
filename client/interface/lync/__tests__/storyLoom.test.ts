@@ -73,14 +73,17 @@ describe("Textile story loom", () => {
       root: {
         id: seed.id,
         text: "Start",
+        origin: "unknown",
         continuations: [
           {
             id: first.id,
             text: "A",
+            origin: "unknown",
             continuations: [
               {
                 id: "turn-5",
                 text: "C",
+                origin: "unknown",
                 continuations: [],
               },
             ],
@@ -88,6 +91,7 @@ describe("Textile story loom", () => {
           {
             id: "turn-4",
             text: "B",
+            origin: "unknown",
             continuations: [],
           },
         ],
@@ -131,10 +135,12 @@ describe("Textile story loom", () => {
     expect(tree.root.continuations?.[1]).toEqual({
       id: appended.id,
       text: "Edited",
+      origin: "unknown",
       continuations: [
         {
           id: "turn-6",
           text: "Split tail",
+          origin: "unknown",
           continuations: [],
         },
       ],
@@ -160,15 +166,18 @@ describe("Textile story loom", () => {
       root: {
         id: original.id,
         text: "Edited root",
+        origin: "unknown",
         continuations: [
           {
             id: "turn-3",
             text: "Original child",
+            origin: "unknown",
             continuations: [],
           },
           {
             id: "turn-5",
             text: "Split tail",
+            origin: "unknown",
             continuations: [],
           },
         ],
@@ -189,15 +198,105 @@ describe("Textile story loom", () => {
       root: {
         id: original.id,
         text: "Start",
+        origin: "unknown",
         continuations: [
           {
             id: "turn-3",
             text: "Original child",
+            origin: "unknown",
             continuations: [],
           },
         ],
       },
     });
+  });
+
+  it("stamps generatedBy on model turns and leaves human turns unmarked", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    const seed = await loom.appendTurn(null, { text: "Start" }, {
+      role: "prose",
+      author: "ada",
+      via: "textile-browser",
+    });
+
+    // Model turn: carries generatedBy + the person's actor/via.
+    await appendStoryDrafts(loom, seed.id, [{ text: "M" }], {
+      actor: "ada",
+      via: "textile-browser",
+      generatedBy: {
+        model: "test-model",
+        temperature: 0.7,
+        lengthMode: "medium",
+        textSplitting: false,
+      },
+    });
+    // Human turn: actor/via but NO generatedBy.
+    await appendStoryRevision(loom, seed.id, { text: "H" }, undefined, {
+      actor: "ada",
+      via: "textile-browser",
+    });
+
+    const [modelTurn, humanTurn] = await loom.childrenOf(seed.id);
+    expect(modelTurn?.meta?.generatedBy).toEqual({
+      model: "test-model",
+      temperature: 0.7,
+      lengthMode: "medium",
+      textSplitting: false,
+    });
+    expect(modelTurn?.meta?.author).toBe("ada");
+    expect(modelTurn?.meta?.via).toBe("textile-browser");
+    expect(humanTurn?.meta?.generatedBy).toBeUndefined();
+    expect(humanTurn?.meta?.author).toBe("ada");
+  });
+
+  it("folds a mixed human+model loom into StoryNodes carrying origin/actor", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    const seed = await loom.appendTurn(null, { text: "Start" }, {
+      role: "prose",
+      author: "ada",
+      via: "textile-browser",
+    });
+    await appendStoryDrafts(loom, seed.id, [{ text: "Model line" }], {
+      actor: "ada",
+      via: "textile-browser",
+      generatedBy: { model: "test-model" },
+    });
+
+    const { root } = await projectStoryTree(loom, "Start");
+    expect(root.origin).toBe("human");
+    expect(root.actor).toBe("ada");
+    expect(root.via).toBe("textile-browser");
+    expect(root.generatedBy).toBeUndefined();
+
+    const modelChild = root.continuations?.[0];
+    expect(modelChild?.origin).toBe("model");
+    expect(modelChild?.actor).toBe("ada");
+    expect(modelChild?.generatedBy).toEqual({ model: "test-model" });
+  });
+
+  it("reads imported turns without identity as unknown, never human", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    // Simulate an imported loom: turns carry NO author and NO generatedBy.
+    const seed = await loom.appendTurn(null, { text: "Imported seed" }, {
+      role: "prose",
+    });
+    // Simulate an imported MODEL turn: carries generatedBy but no author.
+    await loom.appendTurn(seed.id, { text: "Imported model line" }, {
+      role: "prose",
+      generatedBy: { model: "some-model" },
+    });
+
+    const { root } = await projectStoryTree(loom, "Imported seed");
+    // Unknowable origin must NOT silently read as human.
+    expect(root.origin).toBe("unknown");
+    // An imported turn carrying generatedBy still reads as model.
+    expect(root.continuations?.[0]?.origin).toBe("model");
   });
 
   it("rejects turns outside the text-story payload contract", async () => {

@@ -101,6 +101,17 @@ export function storyAuthorFor(
   return { actor: resolveAuthorActor(name, anonId), via: LORE_VIA };
 }
 
+/**
+ * The person's current authorship {actor, via} for stamping into turn `meta`.
+ * Resolves the same identity lync binds at client construction, so `meta.author`
+ * matches `event.body.author.actor` — but unlike the dropped event author, meta
+ * survives buildFold to the read layer. `via` (controller) stays separate from
+ * `actor` (person) per the world charter.
+ */
+export function getStoryAuthorship(): { actor: string; via: string } {
+  return storyAuthorFor(getAuthorName(), anonAuthorId());
+}
+
 function generateAnonId(): string {
   const bytes = new Uint8Array(4);
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
@@ -339,7 +350,14 @@ export async function createStoryLoom(title: string, seedText: string) {
   const storyLooms = getStoryLooms();
   const info = await storyLooms.create(textStoryLoomMeta({ title }));
   const loom = await storyLooms.open(info.id);
-  await loom.appendTurn(null, { text: seedText }, { role: "prose" });
+  // The seed is human-typed: stamp the person's identity into meta (no
+  // generatedBy), so the fold reads it as a human turn rather than "unknown".
+  const authorship = getStoryAuthorship();
+  await loom.appendTurn(null, { text: seedText }, {
+    role: "prose",
+    author: authorship.actor,
+    via: authorship.via,
+  });
   await addStoryLoomToIndex(info.id, { title });
   return { info, loom };
 }

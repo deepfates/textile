@@ -10,8 +10,8 @@ import {
 describe("prompt concatenation", () => {
   it("preserves single spaces between nodes", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Once upon a time", continuations: [] },
-      { id: "2", text: " in a land far away", continuations: [] },
+      { id: "1", text: "Once upon a time", origin: "unknown", continuations: [] },
+      { id: "2", text: " in a land far away", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Once upon a time in a land far away");
@@ -19,8 +19,8 @@ describe("prompt concatenation", () => {
 
   it("collapses double spaces at node boundaries", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Once upon a time ", continuations: [] },
-      { id: "2", text: " in a land far away", continuations: [] },
+      { id: "1", text: "Once upon a time ", origin: "unknown", continuations: [] },
+      { id: "2", text: " in a land far away", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Once upon a time in a land far away");
@@ -28,8 +28,8 @@ describe("prompt concatenation", () => {
 
   it("handles nodes with no separating space", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Hello", continuations: [] },
-      { id: "2", text: "world", continuations: [] },
+      { id: "1", text: "Hello", origin: "unknown", continuations: [] },
+      { id: "2", text: "world", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Helloworld");
@@ -37,8 +37,8 @@ describe("prompt concatenation", () => {
 
   it("preserves newlines between nodes", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Chapter 1\n", continuations: [] },
-      { id: "2", text: "It was a dark night.", continuations: [] },
+      { id: "1", text: "Chapter 1\n", origin: "unknown", continuations: [] },
+      { id: "2", text: "It was a dark night.", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Chapter 1\nIt was a dark night.");
@@ -46,8 +46,8 @@ describe("prompt concatenation", () => {
 
   it("collapses multiple newlines at boundaries", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Chapter 1\n\n", continuations: [] },
-      { id: "2", text: "\nIt was a dark night.", continuations: [] },
+      { id: "1", text: "Chapter 1\n\n", origin: "unknown", continuations: [] },
+      { id: "2", text: "\nIt was a dark night.", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Chapter 1\n\nIt was a dark night.");
@@ -56,10 +56,10 @@ describe("prompt concatenation", () => {
   it("handles word mode tokens with leading spaces correctly", () => {
     // Simulating typical word mode output
     const path: StoryNode[] = [
-      { id: "1", text: "Once", continuations: [] },
-      { id: "2", text: " upon", continuations: [] },
-      { id: "3", text: " a", continuations: [] },
-      { id: "4", text: " time", continuations: [] },
+      { id: "1", text: "Once", origin: "unknown", continuations: [] },
+      { id: "2", text: " upon", origin: "unknown", continuations: [] },
+      { id: "3", text: " a", origin: "unknown", continuations: [] },
+      { id: "4", text: " time", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 3);
     expect(prompt).toBe("Once upon a time");
@@ -67,8 +67,8 @@ describe("prompt concatenation", () => {
 
   it("handles mixed whitespace at boundaries", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Hello\t", continuations: [] },
-      { id: "2", text: " world", continuations: [] },
+      { id: "1", text: "Hello\t", origin: "unknown", continuations: [] },
+      { id: "2", text: " world", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Hello\tworld");
@@ -76,9 +76,9 @@ describe("prompt concatenation", () => {
 
   it("handles empty nodes gracefully", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Hello", continuations: [] },
-      { id: "2", text: "", continuations: [] },
-      { id: "3", text: " world", continuations: [] },
+      { id: "1", text: "Hello", origin: "unknown", continuations: [] },
+      { id: "2", text: "", origin: "unknown", continuations: [] },
+      { id: "3", text: " world", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 2);
     expect(prompt).toBe("Hello world");
@@ -86,10 +86,10 @@ describe("prompt concatenation", () => {
 
   it("respects depth parameter", () => {
     const path: StoryNode[] = [
-      { id: "1", text: "Once", continuations: [] },
-      { id: "2", text: " upon", continuations: [] },
-      { id: "3", text: " a", continuations: [] },
-      { id: "4", text: " time", continuations: [] },
+      { id: "1", text: "Once", origin: "unknown", continuations: [] },
+      { id: "2", text: " upon", origin: "unknown", continuations: [] },
+      { id: "3", text: " a", origin: "unknown", continuations: [] },
+      { id: "4", text: " time", origin: "unknown", continuations: [] },
     ];
     const prompt = createPrompt(path, 1);
     expect(prompt).toBe("Once upon");

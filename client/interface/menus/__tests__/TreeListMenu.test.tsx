@@ -8,6 +8,7 @@ const trees = {
       id: "root",
       text: "A first line that previews the story action row.",
       continuations: [],
+      origin: "unknown" as const,
     },
   },
 };

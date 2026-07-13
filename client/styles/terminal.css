@@ -388,6 +388,48 @@ html, body {
   -webkit-box-decoration-break: clone;
 }
 
+/* Origin byline — the single, quiet human-vs-model distinction for the
+   frontier turn. Copies the dee-n19h sync-indicator grammar: 0.72rem, low
+   opacity, theme-var color, a leading dot, verbose detail in title/aria-label.
+   Theme vars only, so it survives all 14 themes; no avatars, no name-badges. */
+.story-text .story-origin {
+  display: block;
+  margin-top: 0.75rem;
+  color: var(--theme-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.74;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.story-text .story-origin::before {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 0.45ch;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: 0.08em;
+}
+
+.story-text .story-origin--model {
+  color: var(--theme-focused-foreground);
+}
+
+.story-text .story-origin--human {
+  color: var(--theme-muted);
+}
+
+.story-text .story-origin--unknown {
+  color: var(--theme-muted);
+  font-style: italic;
+  opacity: 0.66;
+}
+
 .story-text::-webkit-scrollbar { width: 6px; }
 .story-text::-webkit-scrollbar-track { background: transparent; }
 .story-text::-webkit-scrollbar-thumb {

@@ -15,6 +15,7 @@ import {
 } from "../lync/storyLoom";
 import {
   createStoryLoom,
+  getStoryAuthorship,
   removeStory,
   type StoryLoom,
 } from "../lync/storyRuntime";
@@ -38,6 +39,7 @@ export const INITIAL_STORY = {
     id: "root",
     text: "Once upon a time, in Absalom,",
     continuations: [],
+    origin: "unknown" as const,
   },
 };
 
@@ -268,11 +270,14 @@ export function useStoryTree(params: StoryParams) {
       const parentNode = currentPath[currentDepth - 1];
       const parentId = parentNode?.id ?? null;
 
+      // A saved revision is a human action: stamp the person's identity, no
+      // generatedBy, so it folds to a human turn.
       const appended = await appendStoryRevision(
         loom,
         parentId,
         revision,
         currentNode.id,
+        getStoryAuthorship(),
       );
       const updatedTree = await refreshTreeFromLoom(currentLoomId, loom);
       touchStoryUpdated(currentLoomId);
@@ -417,10 +422,21 @@ export function useStoryTree(params: StoryParams) {
 
           try {
             const newContinuations = await generateContinuations(count);
+            // Model turns: stamp who ran it (the person's actor/via) AND
+            // generatedBy, which marks these as model-generated in the fold.
             await appendStoryDrafts(
               loom,
               currentNode.id,
               newContinuations,
+              {
+                ...getStoryAuthorship(),
+                generatedBy: {
+                  model: params.model,
+                  temperature: params.temperature,
+                  lengthMode: params.lengthMode,
+                  textSplitting: params.textSplitting,
+                },
+              },
             );
 
             const parentPath = currentPath.slice(0, currentDepth + 1);

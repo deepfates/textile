@@ -14,12 +14,14 @@ describe("TreeListMenu row metadata", () => {
       countStoryNodes({
         id: "root",
         text: "Root",
+        origin: "unknown",
         continuations: [
-          { id: "a", text: "A" },
+          { id: "a", text: "A", origin: "unknown" },
           {
             id: "b",
             text: "B",
-            continuations: [{ id: "c", text: "C" }],
+            origin: "unknown",
+            continuations: [{ id: "c", text: "C", origin: "unknown" }],
           },
         ],
       }),
@@ -52,7 +54,8 @@ describe("TreeListMenu row metadata", () => {
         tree: story({
           id: "root",
           text: "  The opening line\nwith extra spacing  ",
-          continuations: [{ id: "next", text: "Next" }],
+          origin: "unknown",
+          continuations: [{ id: "next", text: "Next", origin: "unknown" }],
         }),
         isCurrent: true,
         metaDateLabel: "opened Jul 7",
