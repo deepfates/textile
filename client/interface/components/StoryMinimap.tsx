@@ -2,6 +2,7 @@ import { useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { hierarchy } from "d3-hierarchy";
 import { flextree } from "d3-flextree";
 import type { StoryNode } from "../types";
+import { originDetail } from "../utils/originDisplay";
 
 type LayoutStoryNode = {
   data: StoryNode;
@@ -206,13 +207,31 @@ function useEdges(root: StoryNode) {
 /**
  * Terminal-style minibuffer at bottom of map
  */
-const Minibuffer = ({ text }: { text: string }) => (
-  <div className="minimap-minibuffer">
-    <div className="minimap-minibuffer-text">
-      {text || "Navigate with arrow keys • A to generate • B to edit"}
+const Minibuffer = ({ text, node }: { text: string; node?: StoryNode | null }) => {
+  // Authorship follows the cursor: the node you're standing on says whose it is,
+  // in the line that already narrates it. No mark painted across the tree — you
+  // learn who wrote a node the same way you learn everything here, by moving onto
+  // it. Quiet muted tag; the full actor · via · model lives in the title.
+  const who =
+    node == null
+      ? null
+      : node.origin === "model"
+        ? "model"
+        : node.origin === "human"
+          ? "you"
+          : "unknown";
+  return (
+    <div
+      className="minimap-minibuffer"
+      title={node ? originDetail(node) : undefined}
+    >
+      <div className="minimap-minibuffer-text">
+        {who && <span className="minimap-minibuffer-who">{who} · </span>}
+        {text || "Navigate with arrow keys • A to generate • B to edit"}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * The actual component.
@@ -589,6 +608,7 @@ export const StoryMinimap = ({
             ? selectedSibling.text.split("\n")[0]
             : highlightedNode.text.split("\n")[0]
         }
+        node={isSingleNode ? null : (selectedSibling ?? highlightedNode)}
       />
     </div>
   );
