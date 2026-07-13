@@ -38,11 +38,9 @@
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "wouter": "^3.3.5",
+    "ws": "^8.18.0",
     "yargs": "^17.7.2",
-    "lync-core": "file:vendor/lync-packages/lync-core-0.2.0.tgz",
-    "lync-index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-    "lync-client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-    "lync-server": "file:vendor/lync-packages/lync-server-0.2.0.tgz"
+    "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
@@ -61,20 +59,14 @@
     "vite-plugin-pwa": "^1.0.1"
   },
   "overrides": {
-    "lync-core": "file:vendor/lync-packages/lync-core-0.2.0.tgz",
-    "lync-index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-    "lync-client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-    "lync-server": "file:vendor/lync-packages/lync-server-0.2.0.tgz"
+    "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
   },
   "patchedDependencies": {
     "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch"
   },
   "pnpm": {
     "overrides": {
-      "lync-core": "file:vendor/lync-packages/lync-core-0.2.0.tgz",
-      "lync-index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-      "lync-client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-      "lync-server": "file:vendor/lync-packages/lync-server-0.2.0.tgz"
+      "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz"
     }
   }
 }

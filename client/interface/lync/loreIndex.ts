@@ -18,7 +18,7 @@ import type {
   LoomIndexListener,
   LoomIndexes,
   LoomIndexSnapshot,
-} from "lync-index";
+} from "lync-core/indexes";
 
 type LoomOnlyReference = Extract<LoomReference, { kind: "loom" }>;
 

@@ -20,9 +20,9 @@ import {
   isTextStoryLoomMeta,
   textStoryLoomMeta,
 } from "lync-core/profiles/text-story";
-import { createLoomClient } from "lync-client";
-import { upsertLoom } from "lync-index/entries";
-import type { LoomIndex } from "lync-index";
+import { createLoomClient } from "lync-core/client";
+import { upsertLoom } from "lync-core/indexes/entries";
+import type { LoomIndex } from "lync-core/indexes";
 import { createLoreLoomIndexes } from "./loreIndex";
 import type {
   StoryEntryMeta,

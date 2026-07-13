@@ -6,7 +6,7 @@ import { createMemoryEventStore } from "lync-core/memory-log";
 import { createLyncLooms, loomRootId } from "lync-core/looms";
 import { createSyncedStore, createWebSocketTransport } from "lync-core/synced-store";
 import { textStoryLoomMeta } from "lync-core/profiles/text-story";
-import { startLyncServe } from "lync-server";
+import { startLyncServe } from "lync-core/relay";
 import { resolveLyncAuthMode } from "../lync";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

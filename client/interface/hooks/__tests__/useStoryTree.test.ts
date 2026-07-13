@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { loomRef, type LoomReference } from "lync-core";
-import { createTestLoomClient } from "lync-client/testing";
+import { createTestLoomClient } from "lync-core/client/testing";
 import { textStoryLoomMeta } from "lync-core/profiles/text-story";
 import {
   chooseInitialStoryKey,

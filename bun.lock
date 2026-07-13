@@ -19,10 +19,7 @@
         "d3-hierarchy": "^3.1.2",
         "express": "^4.19.2",
         "isomorphic-ws": "^5.0.0",
-        "lync-client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-        "lync-core": "file:vendor/lync-packages/lync-core-0.2.0.tgz",
-        "lync-index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-        "lync-server": "file:vendor/lync-packages/lync-server-0.2.0.tgz",
+        "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz",
         "nocache": "^4.0.0",
         "nodemon": "^3.1.0",
         "openai": "^4.77.0",
@@ -34,6 +31,7 @@
         "vite-plugin-top-level-await": "^1.6.0",
         "vite-plugin-wasm": "^3.6.0",
         "wouter": "^3.3.5",
+        "ws": "^8.18.0",
         "yargs": "^17.7.2",
       },
       "devDependencies": {
@@ -55,10 +53,7 @@
     },
   },
   "overrides": {
-    "lync-client": "file:vendor/lync-packages/lync-client-0.2.0.tgz",
-    "lync-core": "file:vendor/lync-packages/lync-core-0.2.0.tgz",
-    "lync-index": "file:vendor/lync-packages/lync-index-0.2.0.tgz",
-    "lync-server": "file:vendor/lync-packages/lync-server-0.2.0.tgz",
+    "lync-core": "file:vendor/lync-packages/lync-core-0.3.0.tgz",
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -1029,13 +1024,7 @@
 
     "lru-cache": ["lru-cache@5.1.1", "", { "dependencies": { "yallist": "^3.0.2" } }, "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w=="],
 
-    "lync-client": ["lync-client@vendor/lync-packages/lync-client-0.2.0.tgz", { "dependencies": { "lync-core": "0.2.0", "lync-index": "0.2.0" } }, "sha512-XVo+rYPI68u+gLTN1AJR4j3/EveODKnj4QmdEnvccRy+imXWa7UrzYiuiIwNIzPZMzeoFNoBvLNwD8m2ijCVkQ=="],
-
-    "lync-core": ["lync-core@vendor/lync-packages/lync-core-0.2.0.tgz", {}, "sha512-LduWK6fJwgLY9X8NUuQItP3d7WF5WNQxh7HRsxB1EFCssSFteORzB8aqP9t/6twBd9XfgqalswMn3wd+NcWlTQ=="],
-
-    "lync-index": ["lync-index@vendor/lync-packages/lync-index-0.2.0.tgz", { "dependencies": { "lync-core": "0.2.0" } }, "sha512-5w8+RWX24VmgC7PlEzneLYvZDqUeISHUV7/3unchuhAgWQadVqTKV0VOfzbxOHn6Kavct3WGhB54tvM4POUW/A=="],
-
-    "lync-server": ["lync-server@vendor/lync-packages/lync-server-0.2.0.tgz", { "dependencies": { "lync-core": "0.2.0", "ws": "^8.18.0" } }, "sha512-YgqLgaRnWPzJKUoBj01EN98/5+9705LHKO2P9dmPSlP8W7BVXsOkjI/7dK/8QsSZ2nuRZYN7AlB2ML8usiiSug=="],
+    "lync-core": ["lync-core@vendor/lync-packages/lync-core-0.3.0.tgz", { "bin": { "lync": "bin/lync.js" } }, "sha512-lJeGJ3I3KHnHCq55+WhFRiBwYgDRWN/Rfa3X+sq1m40goiC3Fu5GPF4ERG+k5ROrvtHvOaDJklrfCVdC5ITcqg=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 

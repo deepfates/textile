@@ -3,7 +3,7 @@ import path from "path";
 import {
   attachLyncServer as attachLyncRelay,
   type AttachLyncServerOptions,
-} from "lync-server";
+} from "lync-core/relay";
 import { hasSiteAccess } from "./siteAuth";
 
 let attached = false;
