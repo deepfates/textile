@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { createMemoryEventStore } from "@deepfates/lync/memory-log";
 import { createLyncLooms, loomRootId } from "@deepfates/lync/looms";
 import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
+import { loomRef, type LoomReference } from "@deepfates/lync";
+import { createLoreLoomIndexes } from "../loreIndex";
 import {
   createStoryIndexShareUrl,
   createStoryFocusShareUrl,
@@ -160,6 +162,38 @@ describe("author identity", () => {
     // via stays the controller/software on every human turn.
     for (const turn of turns) {
       expect(turn.body.author.via).toBe("textile-browser");
+    }
+  });
+
+  it("authors index events as the person, never the hardcoded \"textile\"", async () => {
+    const store = createMemoryEventStore();
+    // The same derivation getStoryClient() uses to build its index author.
+    const author = storyAuthorFor("Bram Stoker", "anon-index");
+    const indexes = createLoreLoomIndexes<{ title: string }, { app: "textile" }>({
+      store,
+      author,
+    });
+
+    // create() mints a lync/index root; addLoom() mints a lync/index-entry.
+    const index = await indexes.create({ app: "textile" });
+    await index.addLoom(
+      loomRef("lync:demo-loom") as Extract<LoomReference, { kind: "loom" }>,
+      { title: "Dracula", kind: "story" },
+    );
+
+    const root = index.id.slice("lore-index:".length);
+    const indexEvents = (await store.byRoot(root)).filter((e) =>
+      e.body.kind.startsWith("lync/index"),
+    );
+
+    // Both the index root and the entry were minted.
+    expect(indexEvents.length).toBeGreaterThanOrEqual(2);
+    // Every index event carries the person, not the old hardcoded constant,
+    // and keeps via as the controller — matching the turn events.
+    for (const event of indexEvents) {
+      expect(event.body.author.actor).toBe("Bram Stoker");
+      expect(event.body.author.actor).not.toBe("textile");
+      expect(event.body.author.via).toBe("textile-browser");
     }
   });
 });
