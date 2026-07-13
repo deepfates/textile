@@ -73,7 +73,125 @@ let syncSnapshot: LyncSyncSnapshot = {
 const INDEX_STORAGE_KEY = "textile-lync-v1-index-id";
 const LORE_IMPORT_STORAGE_KEY = "textile-lync-v1-server-lore-imported";
 const STORAGE_NAMESPACE = "textile-lync-v1";
-const LORE_AUTHOR = { actor: "textile", via: "textile-browser" };
+// The person's display name (identity) and a stable per-browser anonymous id
+// used when no name is set. Identity is the PERSON; `via` (below) is the
+// controller/software — the two are kept separate per the world charter.
+const AUTHOR_NAME_STORAGE_KEY = "textile-lync-v1-author-name";
+const ANON_AUTHOR_STORAGE_KEY = "textile-lync-v1-anon-author-id";
+// How loudly authorship (human vs model) is surfaced in the reader. The taste
+// call — does authorship ever touch the prose? — lives in this dial, not baked
+// into the reading surface. Persisted per-browser like the author name.
+const AUTHORSHIP_DISPLAY_STORAGE_KEY = "textile-lync-v1-authorship-display";
+const LORE_VIA = "textile-browser";
+
+/**
+ * Resolve the person's `actor` identity: their display name if they set one,
+ * otherwise the stable per-browser anonymous id. The anon id is REQUIRED so
+ * two un-named browsers still produce distinguishable events — it is never a
+ * shared constant.
+ */
+export function resolveAuthorActor(
+  name: string | null | undefined,
+  anonId: string,
+): string {
+  return (name?.trim() ?? "") || anonId;
+}
+
+/** Build a full lync author from a name + anon id. `via` is the controller. */
+export function storyAuthorFor(
+  name: string | null | undefined,
+  anonId: string,
+): { actor: string; via: string } {
+  return { actor: resolveAuthorActor(name, anonId), via: LORE_VIA };
+}
+
+/**
+ * The person's current authorship {actor, via} for stamping into turn `meta`.
+ * Resolves the same identity lync binds at client construction, so `meta.author`
+ * matches `event.body.author.actor` — but unlike the dropped event author, meta
+ * survives buildFold to the read layer. `via` (controller) stays separate from
+ * `actor` (person) per the world charter.
+ */
+export function getStoryAuthorship(): { actor: string; via: string } {
+  return storyAuthorFor(getAuthorName(), anonAuthorId());
+}
+
+function generateAnonId(): string {
+  const bytes = new Uint8Array(4);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return `anon-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The stable per-browser anonymous id, minting and persisting one if absent. */
+function anonAuthorId(): string {
+  if (typeof window === "undefined") return generateAnonId();
+  const existing = window.localStorage.getItem(ANON_AUTHOR_STORAGE_KEY);
+  if (existing) return existing;
+  const id = generateAnonId();
+  window.localStorage.setItem(ANON_AUTHOR_STORAGE_KEY, id);
+  return id;
+}
+
+/** The person's saved display name, or "" when unset. */
+export function getAuthorName(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(AUTHOR_NAME_STORAGE_KEY)?.trim() ?? "";
+}
+
+/**
+ * Persist the person's display name. lync binds the author at client
+ * construction time, and the UI holds open loom handles bound to that author
+ * (see useStoryTree's loomsById), so a live singleton reset would split writes
+ * across two stores. The change therefore takes effect on the next reload; the
+ * caller is responsible for telling the user so (NOTHING-SILENT). The anon-id
+ * fallback keeps identities distinguishable in the meantime.
+ */
+export function setAuthorName(name: string): void {
+  if (typeof window === "undefined") return;
+  const trimmed = name.trim();
+  if (trimmed) window.localStorage.setItem(AUTHOR_NAME_STORAGE_KEY, trimmed);
+  else window.localStorage.removeItem(AUTHOR_NAME_STORAGE_KEY);
+}
+
+/**
+ * How loudly the reader surfaces authorship (human vs model):
+ *   off     — nothing shown; the not-seeing case, first-class.
+ *   ambient — the quiet status-strip chip only; prose is UNTOUCHED (default).
+ *   detail  — the louder mode; the only one that tints the prose.
+ */
+export type AuthorshipDisplay = "off" | "ambient" | "detail";
+
+const AUTHORSHIP_DISPLAY_VALUES: AuthorshipDisplay[] = [
+  "off",
+  "ambient",
+  "detail",
+];
+
+/** The saved authorship-display mode; defaults to "ambient" when unset. */
+export function getAuthorshipDisplay(): AuthorshipDisplay {
+  if (typeof window === "undefined") return "ambient";
+  const raw = window.localStorage.getItem(AUTHORSHIP_DISPLAY_STORAGE_KEY);
+  return AUTHORSHIP_DISPLAY_VALUES.includes(raw as AuthorshipDisplay)
+    ? (raw as AuthorshipDisplay)
+    : "ambient";
+}
+
+/** Persist the authorship-display mode. Takes effect immediately (view-only). */
+export function setAuthorshipDisplay(mode: AuthorshipDisplay): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(AUTHORSHIP_DISPLAY_STORAGE_KEY, mode);
+}
+
+/** Whether a story client has already been built (and its author bound). */
+export function hasLiveStoryClient(): boolean {
+  return client !== null;
+}
 
 function buildSyncTransport(): SyncTransport | null {
   if (typeof window === "undefined") return null;
@@ -100,6 +218,9 @@ function getStoryClient() {
       ? createSyncedStore(base, transport, { onStatus: applySyncStatus })
       : base;
     eventStore = store;
+    // Bind the author to the PERSON's identity (their name, else a stable
+    // per-browser anon id) at construction time — lync captures it here.
+    const author = storyAuthorFor(getAuthorName(), anonAuthorId());
     return createLoomClient<
       StoryTurnPayload,
       StoryLoomMeta,
@@ -109,11 +230,11 @@ function getStoryClient() {
     >({
       looms: createLyncLooms<StoryTurnPayload, StoryLoomMeta, StoryTurnMeta>({
         store,
-        author: LORE_AUTHOR,
+        author,
       }),
       indexes: createLoreLoomIndexes<StoryEntryMeta, { app: "textile" }>({
         store,
-        author: LORE_AUTHOR,
+        author,
       }),
       close: async () => {},
     });
@@ -262,7 +383,14 @@ export async function createStoryLoom(title: string, seedText: string) {
   const storyLooms = getStoryLooms();
   const info = await storyLooms.create(textStoryLoomMeta({ title }));
   const loom = await storyLooms.open(info.id);
-  await loom.appendTurn(null, { text: seedText }, { role: "prose" });
+  // The seed is human-typed: stamp the person's identity into meta (no
+  // generatedBy), so the fold reads it as a human turn rather than "unknown".
+  const authorship = getStoryAuthorship();
+  await loom.appendTurn(null, { text: seedText }, {
+    role: "prose",
+    author: authorship.actor,
+    via: authorship.via,
+  });
   await addStoryLoomToIndex(info.id, { title });
   return { info, loom };
 }

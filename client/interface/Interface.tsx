@@ -63,9 +63,16 @@ import {
   getStoryIndex,
   getLyncSyncSnapshot,
   subscribeLyncSyncStatus,
+  getAuthorName,
+  setAuthorName,
+  getAuthorshipDisplay,
+  setAuthorshipDisplay,
+  hasLiveStoryClient,
   type LyncSyncSnapshot,
+  type AuthorshipDisplay,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
+import { AuthorshipIndicator } from "./components/AuthorshipIndicator";
 
 const DEFAULT_PARAMS = {
   temperature: 1.0,
@@ -88,6 +95,8 @@ const SETTINGS_ROW_LABELS = [
   "Light Theme",
   "Dark Theme",
   "Font",
+  "Author Name",
+  "Authorship",
 ];
 
 function useLyncSyncIndicator(): LyncSyncSnapshot {
@@ -139,6 +148,40 @@ export const GamepadInterface = () => {
   const [bonkDirection, setBonkDirection] = useState<
     "up" | "right" | "down" | "left" | null
   >(null);
+  // The person's display name — their identity on shared looms. Persisted in
+  // localStorage and read back by storyRuntime when it binds the lync author.
+  const [authorName, setAuthorNameState] = useState<string>(() => getAuthorName());
+  // How loudly authorship is surfaced in the reader. View-only (unlike the
+  // author name it needs no reload), persisted per-browser. Default = ambient.
+  const [authorshipDisplay, setAuthorshipDisplayState] =
+    useState<AuthorshipDisplay>(() => getAuthorshipDisplay());
+  const changeAuthorshipDisplay = useCallback((mode: AuthorshipDisplay) => {
+    setAuthorshipDisplay(mode);
+    setAuthorshipDisplayState(mode);
+  }, []);
+
+  const editAuthorName = useCallback(() => {
+    const input = window.prompt(
+      "Your name (how your turns are signed on shared stories)",
+      authorName,
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    if (trimmed === authorName) return;
+    setAuthorName(trimmed);
+    setAuthorNameState(trimmed);
+    // lync binds the author when the story client is built, and the open loom
+    // handles keep that author, so a name change only reaches new writes after
+    // a reload. Say so plainly rather than silently signing turns with the old
+    // name (the anon-id fallback keeps identities distinct meanwhile).
+    if (hasLiveStoryClient()) {
+      window.alert(
+        trimmed
+          ? `Saved. Reload to sign new turns as "${trimmed}".`
+          : "Saved. Reload to sign new turns with your anonymous id.",
+      );
+    }
+  }, [authorName]);
 
   // (select menu navigation now handled in useMenuSystem)
 
@@ -419,6 +462,8 @@ export const GamepadInterface = () => {
         "lightTheme",
         "darkTheme",
         "font",
+        "authorName",
+        "authorshipDisplay",
       ] as const,
     []
   );
@@ -509,12 +554,21 @@ export const GamepadInterface = () => {
           const ids = availableFonts.map((f) => f.id);
           if (!ids.length) return;
           setFont(wrap(ids, font, dir));
+        } else if (param === "authorName") {
+          // Free text: only Enter opens the editor; ←→ do nothing.
+          if (key === "Enter") editAuthorName();
+        } else if (param === "authorshipDisplay") {
+          const modes: AuthorshipDisplay[] = ["off", "ambient", "detail"];
+          changeAuthorshipDisplay(wrap(modes, authorshipDisplay, dir));
         }
       }
     },
     [
       SETTINGS_PARAMS,
+      authorshipDisplay,
       availableFonts,
+      changeAuthorshipDisplay,
+      editAuthorName,
       darkTheme,
       darkThemeOptions,
       font,
@@ -967,8 +1021,15 @@ export const GamepadInterface = () => {
                       lightTheme,
                       darkTheme,
                       font,
+                      authorName,
+                      authorshipDisplay,
                     }}
+                    onEditAuthorName={editAuthorName}
                     onParamChange={(param, value) => {
+                      if (param === "authorshipDisplay") {
+                        changeAuthorshipDisplay(value as AuthorshipDisplay);
+                        return;
+                      }
                       if (param === "themeMode") {
                         setThemeMode(value as ThemeMode);
                         return;
@@ -1157,6 +1218,7 @@ export const GamepadInterface = () => {
               currentPath={getCurrentPath()}
               currentDepth={currentDepth}
               isGeneratingAt={isGeneratingAt}
+              authorshipDisplay={authorshipDisplay}
             />
           </div>
 
@@ -1241,6 +1303,12 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
+            {onLoom && projection === "loom" ? (
+              <AuthorshipIndicator
+                node={getCurrentPath()[getCurrentPath().length - 1]}
+                mode={authorshipDisplay}
+              />
+            ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
         </section>

@@ -1,4 +1,9 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { createMemoryEventStore } from "@deepfates/lync/memory-log";
+import { createLyncLooms, loomRootId } from "@deepfates/lync/looms";
+import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
+import { loomRef, type LoomReference } from "@deepfates/lync";
+import { createLoreLoomIndexes } from "../loreIndex";
 import {
   createStoryIndexShareUrl,
   createStoryFocusShareUrl,
@@ -6,7 +11,11 @@ import {
   createStoryShareUrl,
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
+  getAuthorshipDisplay,
+  setAuthorshipDisplay,
   reduceLyncSyncStatus,
+  resolveAuthorActor,
+  storyAuthorFor,
 } from "../storyRuntime";
 
 describe("story runtime references", () => {
@@ -82,6 +91,115 @@ describe("story runtime references", () => {
   });
 });
 
+describe("author identity", () => {
+  it("resolves the person's name, else the stable anon id", () => {
+    // A named person carries their own name.
+    expect(resolveAuthorActor("Ada", "anon-1")).toBe("Ada");
+    // Whitespace-only or empty names fall back to the anon id.
+    expect(resolveAuthorActor("   ", "anon-1")).toBe("anon-1");
+    expect(resolveAuthorActor("", "anon-1")).toBe("anon-1");
+    expect(resolveAuthorActor(undefined, "anon-2")).toBe("anon-2");
+    // Two un-named browsers stay distinguishable — never a shared constant.
+    expect(resolveAuthorActor(null, "anon-1")).not.toBe(
+      resolveAuthorActor(null, "anon-2"),
+    );
+  });
+
+  it("keeps actor as the person and via as the controller", () => {
+    expect(storyAuthorFor("Ada", "anon-1")).toEqual({
+      actor: "Ada",
+      via: "textile-browser",
+    });
+    expect(storyAuthorFor("", "anon-xyz")).toEqual({
+      actor: "anon-xyz",
+      via: "textile-browser",
+    });
+  });
+
+  it("writes distinguishable events for two people on one shared loom", async () => {
+    const store = createMemoryEventStore();
+    const named = createLyncLooms<
+      { text: string },
+      { title: string },
+      { role: string }
+    >({ store, author: storyAuthorFor("Ada Lovelace", "anon-unused") });
+    const anon = createLyncLooms<
+      { text: string },
+      { title: string },
+      { role: string }
+    >({ store, author: storyAuthorFor("", "anon-2f9c") });
+
+    // A named person opens a shared story and writes the first human turn.
+    const info = await named.create(
+      textStoryLoomMeta({ title: "Shared" }) as { title: string },
+    );
+    const namedLoom = await named.open(info.id);
+    const seed = await namedLoom.appendTurn(
+      null,
+      { text: "Ada writes." },
+      { role: "prose" },
+    );
+
+    // An un-named collaborator branches from the same loom in the same store.
+    const anonLoom = await anon.open(info.id);
+    await anonLoom.appendTurn(
+      seed.id,
+      { text: "Anon replies." },
+      { role: "prose" },
+    );
+
+    // Read the real appended events back and inspect their authors.
+    const events = await store.byRoot(loomRootId(info.id));
+    const turns = events.filter((e) => e.body.kind === "lync/turn");
+    const actors = turns.map((e) => e.body.author.actor);
+
+    // Two distinct identities produce two distinct actors.
+    expect(turns.length).toBe(2);
+    expect(new Set(actors).size).toBe(2);
+    // A named person's turn carries their name; the anon browser its anon id.
+    expect(actors).toContain("Ada Lovelace");
+    expect(actors).toContain("anon-2f9c");
+    // No human turn is authored as the old hardcoded "textile" constant.
+    expect(actors).not.toContain("textile");
+    // via stays the controller/software on every human turn.
+    for (const turn of turns) {
+      expect(turn.body.author.via).toBe("textile-browser");
+    }
+  });
+
+  it("authors index events as the person, never the hardcoded \"textile\"", async () => {
+    const store = createMemoryEventStore();
+    // The same derivation getStoryClient() uses to build its index author.
+    const author = storyAuthorFor("Bram Stoker", "anon-index");
+    const indexes = createLoreLoomIndexes<{ title: string }, { app: "textile" }>({
+      store,
+      author,
+    });
+
+    // create() mints a lync/index root; addLoom() mints a lync/index-entry.
+    const index = await indexes.create({ app: "textile" });
+    await index.addLoom(
+      loomRef("lync:demo-loom") as Extract<LoomReference, { kind: "loom" }>,
+      { title: "Dracula", kind: "story" },
+    );
+
+    const root = index.id.slice("lore-index:".length);
+    const indexEvents = (await store.byRoot(root)).filter((e) =>
+      e.body.kind.startsWith("lync/index"),
+    );
+
+    // Both the index root and the entry were minted.
+    expect(indexEvents.length).toBeGreaterThanOrEqual(2);
+    // Every index event carries the person, not the old hardcoded constant,
+    // and keeps via as the controller — matching the turn events.
+    for (const event of indexEvents) {
+      expect(event.body.author.actor).toBe("Bram Stoker");
+      expect(event.body.author.actor).not.toBe("textile");
+      expect(event.body.author.via).toBe("textile-browser");
+    }
+  });
+});
+
 describe("Lync sync status", () => {
   const initial = {
     state: "local-only" as const,
@@ -117,5 +235,49 @@ describe("Lync sync status", () => {
       state: "local-only",
       detail: "Browser is offline; stories are local only.",
     });
+  });
+});
+
+describe("authorship-display persistence", () => {
+  const savedWindow = (globalThis as { window?: unknown }).window;
+
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    (globalThis as { window?: unknown }).window = {
+      localStorage: {
+        getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+        setItem: (k: string, v: string) => store.set(k, v),
+        removeItem: (k: string) => store.delete(k),
+      },
+    };
+  });
+
+  afterEach(() => {
+    if (savedWindow === undefined)
+      delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = savedWindow;
+  });
+
+  it("defaults to ambient when nothing is stored", () => {
+    expect(getAuthorshipDisplay()).toBe("ambient");
+  });
+
+  it("round-trips a saved mode (persists across a reload)", () => {
+    setAuthorshipDisplay("detail");
+    expect(getAuthorshipDisplay()).toBe("detail");
+    setAuthorshipDisplay("off");
+    expect(getAuthorshipDisplay()).toBe("off");
+  });
+
+  it("falls back to ambient for an unrecognized stored value", () => {
+    (
+      globalThis as {
+        window: { localStorage: { setItem: (k: string, v: string) => void } };
+      }
+    ).window.localStorage.setItem(
+      "textile-lync-v1-authorship-display",
+      "loud",
+    );
+    expect(getAuthorshipDisplay()).toBe("ambient");
   });
 });

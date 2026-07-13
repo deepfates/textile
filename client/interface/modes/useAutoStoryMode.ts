@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import type { GeneratingInfo, InFlight, StoryNode } from "../types";
 import { appendStoryDrafts } from "../lync/storyLoom";
-import type { StoryLoom } from "../lync/storyRuntime";
+import { getStoryAuthorship, type StoryLoom } from "../lync/storyRuntime";
 import type { StoryDraft } from "../lync/storyTypes";
 import { setPreferredChildIndex } from "../lync/storySessionState";
 import type { StoryParams } from "../hooks/useStoryTree";
@@ -233,10 +233,21 @@ export function useAutoStoryMode({
           });
         }
 
+        // Auto-mode turns are model-generated: stamp the person's actor/via
+        // AND generatedBy so the fold reads them as model turns.
         await appendStoryDrafts(
           loom,
           targetNode.id,
           autoChildren,
+          {
+            ...getStoryAuthorship(),
+            generatedBy: {
+              model: params.model,
+              temperature: params.temperature,
+              lengthMode: params.lengthMode,
+              textSplitting: params.textSplitting,
+            },
+          },
         );
         workingTree = await refreshTreeFromLoom(currentLoomId, loom);
 

@@ -5,6 +5,11 @@ import { LENGTH_PRESETS, type LengthMode } from "../../../shared/lengthPresets";
 import { THEME_PRESETS } from "../components/ThemeToggle";
 
 const LENGTH_MODES: LengthMode[] = ["word", "sentence", "paragraph", "page"];
+const AUTHORSHIP_LABELS = {
+  off: "Off",
+  ambient: "Ambient",
+  detail: "Detail",
+} as const;
 const THEME_MODE_LABELS = {
   light: "Light",
   dark: "Dark",
@@ -22,6 +27,8 @@ const THEME_MODE_LABELS = {
  *   6  Light Theme     — set occasionally
  *   7  Dark Theme      — set occasionally
  *   8  Font            — set once or twice ever
+ *   9  Author Name     — the person's identity on shared looms; set once
+ *   10 Authorship      — how loudly human-vs-model shows (Off/Ambient/Detail)
  *
  * Keep SETTINGS_ROW_LABELS (Interface.tsx) in lock-step with this order.
  * The "Manage Models" action row was removed when Models became a tab.
@@ -37,6 +44,7 @@ export const SettingsMenu = ({
   modelsError,
   getModelName,
   fonts,
+  onEditAuthorName,
 }: SettingsMenuProps) => {
   const hover = (index: number) => onSelectParam?.(index);
   const modelOptions = models ? (Object.keys(models) as ModelId[]) : [];
@@ -185,6 +193,33 @@ export const SettingsMenu = ({
           hover(8);
           const ids = fonts.map((f) => f.id);
           onParamChange("font", cycle(ids, params.font, 1));
+        }}
+      />
+      <Row
+        kind="pick"
+        label="Author Name"
+        value={params.authorName || "anonymous"}
+        showAdjust={false}
+        selected={selectedParam === 9}
+        onHover={() => hover(9)}
+        onActivate={() => {
+          hover(9);
+          onEditAuthorName();
+        }}
+      />
+      <Row
+        kind="pick"
+        label="Authorship"
+        value={AUTHORSHIP_LABELS[params.authorshipDisplay]}
+        selected={selectedParam === 10}
+        onHover={() => hover(10)}
+        onActivate={() => {
+          hover(10);
+          const modes = ["off", "ambient", "detail"] as const;
+          onParamChange(
+            "authorshipDisplay",
+            cycle(modes as unknown as string[], params.authorshipDisplay, 1),
+          );
         }}
       />
       {modelsError && (
