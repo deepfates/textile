@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createMemoryEventStore } from "@deepfates/lync/memory-log";
 import { createLyncLooms, loomRootId } from "@deepfates/lync/looms";
 import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
@@ -11,6 +11,8 @@ import {
   createStoryShareUrl,
   createStoryThreadShareUrl,
   getStoryReferenceFromLocation,
+  getAuthorshipDisplay,
+  setAuthorshipDisplay,
   reduceLyncSyncStatus,
   resolveAuthorActor,
   storyAuthorFor,
@@ -233,5 +235,49 @@ describe("Lync sync status", () => {
       state: "local-only",
       detail: "Browser is offline; stories are local only.",
     });
+  });
+});
+
+describe("authorship-display persistence", () => {
+  const savedWindow = (globalThis as { window?: unknown }).window;
+
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    (globalThis as { window?: unknown }).window = {
+      localStorage: {
+        getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+        setItem: (k: string, v: string) => store.set(k, v),
+        removeItem: (k: string) => store.delete(k),
+      },
+    };
+  });
+
+  afterEach(() => {
+    if (savedWindow === undefined)
+      delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = savedWindow;
+  });
+
+  it("defaults to ambient when nothing is stored", () => {
+    expect(getAuthorshipDisplay()).toBe("ambient");
+  });
+
+  it("round-trips a saved mode (persists across a reload)", () => {
+    setAuthorshipDisplay("detail");
+    expect(getAuthorshipDisplay()).toBe("detail");
+    setAuthorshipDisplay("off");
+    expect(getAuthorshipDisplay()).toBe("off");
+  });
+
+  it("falls back to ambient for an unrecognized stored value", () => {
+    (
+      globalThis as {
+        window: { localStorage: { setItem: (k: string, v: string) => void } };
+      }
+    ).window.localStorage.setItem(
+      "textile-lync-v1-authorship-display",
+      "loud",
+    );
+    expect(getAuthorshipDisplay()).toBe("ambient");
   });
 });

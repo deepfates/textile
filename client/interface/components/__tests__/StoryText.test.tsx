@@ -3,19 +3,25 @@ import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StoryText } from "../StoryText";
 import type { StoryNode } from "../../types";
+import type { AuthorshipDisplay } from "../../lync/storyRuntime";
 
-function render(path: StoryNode[], currentDepth: number): string {
+function render(
+  path: StoryNode[],
+  currentDepth: number,
+  authorshipDisplay: AuthorshipDisplay = "ambient",
+): string {
   return renderToStaticMarkup(
     <StoryText
       storyTextRef={createRef<HTMLDivElement>()}
       currentPath={path}
       currentDepth={currentDepth}
       isGeneratingAt={() => false}
+      authorshipDisplay={authorshipDisplay}
     />,
   );
 }
 
-describe("StoryText origin marker", () => {
+describe("StoryText prose surface", () => {
   const human: StoryNode = {
     id: "h",
     text: "A human seed.",
@@ -46,27 +52,35 @@ describe("StoryText origin marker", () => {
     expect(html).toContain('data-origin="model"');
   });
 
-  it("distinguishes a model frontier turn with the quiet theme-var channel", () => {
+  it("renders NO author byline in the reading column by default (Ambient)", () => {
     const html = render([human, model], 1);
-    // The single quiet byline uses an origin-specific modifier class (theme-var
-    // color) and spells out actor/via/origin in the accessible label.
-    expect(html).toContain("story-origin--model");
-    expect(html).toContain("model · test-model");
-    expect(html).toContain("origin: model");
-    expect(html).toContain("author: ada");
-    expect(html).toContain("via: textile-browser");
+    // Re-homed to the status strip: the prose column stays clean. None of the
+    // old byline class, spelled-out label, or detail line appears in the prose.
+    expect(html).not.toContain("story-origin");
+    expect(html).not.toContain("model · test-model");
+    expect(html).not.toContain("origin: model");
+    expect(html).not.toContain("via: textile-browser");
   });
 
-  it("distinguishes a human frontier turn from a model one", () => {
-    const html = render([model, human], 1);
-    expect(html).toContain("story-origin--human");
-    expect(html).not.toContain("story-origin--model");
+  it("renders NO byline and NO tint in Off mode", () => {
+    const html = render([human, model], 1, "off");
+    expect(html).not.toContain("story-origin");
+    expect(html).not.toContain("story-tint");
   });
 
-  it("marks an unknown-origin frontier turn as unknown, not human", () => {
-    const html = render([unknown], 0);
-    expect(html).toContain("story-origin--unknown");
-    expect(html).toContain("origin: unknown");
-    expect(html).not.toContain("story-origin--human");
+  it("adds a per-origin prose tint class ONLY in Detail mode", () => {
+    const ambient = render([human, model], 1, "ambient");
+    expect(ambient).not.toContain("story-tint");
+
+    const detail = render([human, model], 1, "detail");
+    expect(detail).toContain("story-tint--human");
+    expect(detail).toContain("story-tint--model");
+    // Still no caption — Detail tints, it does not spell out under the prose.
+    expect(detail).not.toContain("story-origin");
+  });
+
+  it("tints an unknown turn in Detail mode too", () => {
+    const detail = render([unknown], 0, "detail");
+    expect(detail).toContain("story-tint--unknown");
   });
 });

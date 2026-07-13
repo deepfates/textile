@@ -78,6 +78,10 @@ const STORAGE_NAMESPACE = "textile-lync-v1";
 // controller/software — the two are kept separate per the world charter.
 const AUTHOR_NAME_STORAGE_KEY = "textile-lync-v1-author-name";
 const ANON_AUTHOR_STORAGE_KEY = "textile-lync-v1-anon-author-id";
+// How loudly authorship (human vs model) is surfaced in the reader. The taste
+// call — does authorship ever touch the prose? — lives in this dial, not baked
+// into the reading surface. Persisted per-browser like the author name.
+const AUTHORSHIP_DISPLAY_STORAGE_KEY = "textile-lync-v1-authorship-display";
 const LORE_VIA = "textile-browser";
 
 /**
@@ -153,6 +157,35 @@ export function setAuthorName(name: string): void {
   const trimmed = name.trim();
   if (trimmed) window.localStorage.setItem(AUTHOR_NAME_STORAGE_KEY, trimmed);
   else window.localStorage.removeItem(AUTHOR_NAME_STORAGE_KEY);
+}
+
+/**
+ * How loudly the reader surfaces authorship (human vs model):
+ *   off     — nothing shown; the not-seeing case, first-class.
+ *   ambient — the quiet status-strip chip only; prose is UNTOUCHED (default).
+ *   detail  — the louder mode; the only one that tints the prose.
+ */
+export type AuthorshipDisplay = "off" | "ambient" | "detail";
+
+const AUTHORSHIP_DISPLAY_VALUES: AuthorshipDisplay[] = [
+  "off",
+  "ambient",
+  "detail",
+];
+
+/** The saved authorship-display mode; defaults to "ambient" when unset. */
+export function getAuthorshipDisplay(): AuthorshipDisplay {
+  if (typeof window === "undefined") return "ambient";
+  const raw = window.localStorage.getItem(AUTHORSHIP_DISPLAY_STORAGE_KEY);
+  return AUTHORSHIP_DISPLAY_VALUES.includes(raw as AuthorshipDisplay)
+    ? (raw as AuthorshipDisplay)
+    : "ambient";
+}
+
+/** Persist the authorship-display mode. Takes effect immediately (view-only). */
+export function setAuthorshipDisplay(mode: AuthorshipDisplay): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(AUTHORSHIP_DISPLAY_STORAGE_KEY, mode);
 }
 
 /** Whether a story client has already been built (and its author bound). */

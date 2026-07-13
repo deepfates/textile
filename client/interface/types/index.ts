@@ -52,6 +52,7 @@ export interface SettingsMenuProps {
     darkTheme: ThemeClass;
     font: FontOption;
     authorName: string;
+    authorshipDisplay: import("../lync/storyRuntime").AuthorshipDisplay;
   };
   onParamChange: (param: string, value: number | string | boolean) => void;
   /** Open the interactive editor for the free-text author name. */
