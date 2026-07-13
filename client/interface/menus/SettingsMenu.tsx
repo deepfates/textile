@@ -6,9 +6,8 @@ import { THEME_PRESETS } from "../components/ThemeToggle";
 
 const LENGTH_MODES: LengthMode[] = ["word", "sentence", "paragraph", "page"];
 const AUTHORSHIP_LABELS = {
+  on: "On",
   off: "Off",
-  ambient: "Ambient",
-  detail: "Detail",
 } as const;
 const THEME_MODE_LABELS = {
   light: "Light",
@@ -28,7 +27,7 @@ const THEME_MODE_LABELS = {
  *   7  Dark Theme      — set occasionally
  *   8  Font            — set once or twice ever
  *   9  Author Name     — the person's identity on shared looms; set once
- *   10 Authorship      — how loudly human-vs-model shows (Off/Ambient/Detail)
+ *   10 Authorship      — whether the map minibuffer shows who wrote a node (On/Off)
  *
  * Keep SETTINGS_ROW_LABELS (Interface.tsx) in lock-step with this order.
  * The "Manage Models" action row was removed when Models became a tab.
@@ -215,7 +214,7 @@ export const SettingsMenu = ({
         onHover={() => hover(10)}
         onActivate={() => {
           hover(10);
-          const modes = ["off", "ambient", "detail"] as const;
+          const modes = ["on", "off"] as const;
           onParamChange(
             "authorshipDisplay",
             cycle(modes as unknown as string[], params.authorshipDisplay, 1),

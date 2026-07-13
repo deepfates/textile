@@ -78,9 +78,11 @@ const STORAGE_NAMESPACE = "textile-lync-v1";
 // controller/software — the two are kept separate per the world charter.
 const AUTHOR_NAME_STORAGE_KEY = "textile-lync-v1-author-name";
 const ANON_AUTHOR_STORAGE_KEY = "textile-lync-v1-anon-author-id";
-// How loudly authorship (human vs model) is surfaced in the reader. The taste
-// call — does authorship ever touch the prose? — lives in this dial, not baked
-// into the reading surface. Persisted per-browser like the author name.
+// Whether authorship (human vs model) shows in the map minibuffer. A loom is a
+// cursor tool: you learn who wrote a node by moving onto it, so authorship lives
+// ONLY in the map's minibuffer — never painted across the tree, never in the
+// reading prose. This dial gates only that minibuffer who-tag. Persisted
+// per-browser like the author name.
 const AUTHORSHIP_DISPLAY_STORAGE_KEY = "textile-lync-v1-authorship-display";
 const LORE_VIA = "textile-browser";
 
@@ -160,26 +162,21 @@ export function setAuthorName(name: string): void {
 }
 
 /**
- * How loudly the reader surfaces authorship (human vs model):
- *   off     — nothing shown; the not-seeing case, first-class.
- *   ambient — the quiet status-strip chip only; prose is UNTOUCHED (default).
- *   detail  — the louder mode; the only one that tints the prose.
+ * Whether the map minibuffer narrates the focused node's authorship:
+ *   on  — the minibuffer shows the "<who> · " tag (default).
+ *   off — the minibuffer shows just the node text; the not-seeing case,
+ *         first-class.
  */
-export type AuthorshipDisplay = "off" | "ambient" | "detail";
+export type AuthorshipDisplay = "on" | "off";
 
-const AUTHORSHIP_DISPLAY_VALUES: AuthorshipDisplay[] = [
-  "off",
-  "ambient",
-  "detail",
-];
-
-/** The saved authorship-display mode; defaults to "ambient" when unset. */
+/** The saved authorship-display mode; defaults to "on" when unset.
+ *
+ * Migrates the old three-value dial: the two "shown" modes ("ambient"/"detail")
+ * collapse to "on", "off" stays "off". Anything unrecognized defaults to "on". */
 export function getAuthorshipDisplay(): AuthorshipDisplay {
-  if (typeof window === "undefined") return "ambient";
+  if (typeof window === "undefined") return "on";
   const raw = window.localStorage.getItem(AUTHORSHIP_DISPLAY_STORAGE_KEY);
-  return AUTHORSHIP_DISPLAY_VALUES.includes(raw as AuthorshipDisplay)
-    ? (raw as AuthorshipDisplay)
-    : "ambient";
+  return raw === "off" ? "off" : "on";
 }
 
 /** Persist the authorship-display mode. Takes effect immediately (view-only). */
