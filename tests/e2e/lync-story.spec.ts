@@ -847,3 +847,99 @@ test("two independent authors co-write one shared loom and converge with honest 
   await owner.close();
   await guest.close();
 });
+
+// Presence / who's-here roster. A real relay fans out ephemeral presence frames;
+// each context runs lync's presence-awareness machine, and textile folds that
+// roster into the status strip. We shrink the TTL/heartbeat via window globals so
+// a dropped socket ages out of a peer's roster in ~2s instead of ~30s — the same
+// deterministic machine, just faster clocks (nothing about the wire changes).
+async function enablePresence(
+  context: import("@playwright/test").BrowserContext,
+  name: string,
+) {
+  await context.addInitScript((authorName: string) => {
+    window.localStorage.setItem("textile-lync-v1-author-name", authorName);
+    // Fast timers for the test: 2s TTL, 400ms heartbeat+sweep.
+    (window as unknown as { __lyncPresenceTtlMs?: number }).__lyncPresenceTtlMs = 2000;
+    (window as unknown as { __lyncPresenceHeartbeatMs?: number }).__lyncPresenceHeartbeatMs = 400;
+  }, name);
+}
+
+test("a peer shows in the who's-here roster with live focus + typing, and leaves on disconnect", async ({
+  browser,
+}) => {
+  const owner = await browser.newContext();
+  await enablePresence(owner, "Ada");
+  const page = await owner.newPage();
+  await captureClipboard(page);
+  await mockGeneration(page, "Roster thread");
+
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(page);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("body")).toContainText("Roster thread 1.");
+  await waitForGenerationSettled(page);
+  await page.keyboard.press("ArrowDown");
+
+  await openStoriesDrawer(page);
+  await page.getByRole("button", { name: "Thread link" }).first().focus();
+  await page.keyboard.press("Enter");
+  const threadUrl = await readCapturedClipboard(page);
+  expect(referenceFromUrl(threadUrl)).toMatchObject({ kind: "thread" });
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".menu-content")).toHaveCount(0);
+
+  // The guest joins the SAME loom over the real relay.
+  const guest = await browser.newContext();
+  await enablePresence(guest, "Bram");
+  const guestPage = await guest.newPage();
+  await mockGeneration(guestPage, "Guest");
+  await guestPage.goto(threadUrl);
+  await expect(guestPage.locator("body")).toContainText("Roster thread 1.");
+
+  // 1) The owner SEES the guest in the who's-here roster, keyed by identity.
+  const bram = page.locator('[data-roster-peer][data-actor="Bram"]');
+  await expect(bram).toHaveCount(1, { timeout: 10_000 });
+  await expect(bram).toHaveAttribute("data-kind", "human");
+
+  // 2) The owner sees WHERE the guest is: the guest's focus is a real node id
+  //    that the owner can locate in its own copy of the shared tree.
+  const focus1 = await bram.getAttribute("data-focus");
+  expect(focus1).toBeTruthy();
+  expect(
+    await page.locator(`[data-node-id="${focus1}"]`).count(),
+  ).toBeGreaterThan(0);
+
+  // 3) The guest MOVES its cursor; the owner sees the focus update live.
+  await guestPage.keyboard.press("ArrowUp");
+  await expect
+    .poll(async () => bram.getAttribute("data-focus"), { timeout: 10_000 })
+    .not.toBe(focus1);
+  const focus2 = await bram.getAttribute("data-focus");
+  expect(focus2).toBeTruthy();
+  expect(
+    await page.locator(`[data-node-id="${focus2}"]`).count(),
+  ).toBeGreaterThan(0);
+
+  // 4) The guest starts composing (edit overlay); the owner sees typing live.
+  await expect(bram).toHaveAttribute("data-typing", "false");
+  await guestPage.keyboard.press("Backspace");
+  await expect(guestPage.locator(".edit-textarea")).toHaveCount(1);
+  await expect
+    .poll(async () => bram.getAttribute("data-typing"), { timeout: 10_000 })
+    .toBe("true");
+  await guestPage.keyboard.press("Escape");
+  await expect(guestPage.locator(".edit-textarea")).toHaveCount(0);
+  await expect
+    .poll(async () => bram.getAttribute("data-typing"), { timeout: 10_000 })
+    .toBe("false");
+
+  // 5) The guest's socket drops; the owner ages it out within the TTL.
+  await guest.close();
+  await expect(bram).toHaveCount(0, { timeout: 10_000 });
+
+  await owner.close();
+});

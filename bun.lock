@@ -6,7 +6,7 @@
       "name": "textile",
       "dependencies": {
         "@ax-llm/ax": "^14.0.39",
-        "@deepfates/lync": "0.3.0",
+        "@deepfates/lync": "file:./vendor/deepfates-lync-0.4.0.tgz",
         "@tailwindcss/postcss": "^4.1.17",
         "@types/d3-flextree": "^2.1.4",
         "@types/express": "^4.17.21",
@@ -247,7 +247,7 @@
 
     "@babel/types": ["@babel/types@7.29.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA=="],
 
-    "@deepfates/lync": ["@deepfates/lync@0.3.0", "", { "bin": { "lync": "bin/lync.js" } }, "sha512-AWjBI2RpIOdZUMDCPyQ3aHk5wtlztrWrggs5CxMvwWBDdKObKqM8N2c3Mb018KRUPN001GihFtLz9YImu/H6AA=="],
+    "@deepfates/lync": ["@deepfates/lync@./vendor/deepfates-lync-0.4.0.tgz", { "bin": { "lync": "bin/lync.js" } }, "sha512-F1Ns/xkeKA9EOXvNxlYB24bhvqCv3yB3KlRV44AVAJafnd4YPzaBgbR3oNlYSUOJq/kKnA9PQId00PGKj+bmww=="],
 
     "@emotion/is-prop-valid": ["@emotion/is-prop-valid@1.4.0", "", { "dependencies": { "@emotion/memoize": "^0.9.0" } }, "sha512-QgD4fyscGcbbKwJmqNvUMSE02OsHUa+lAWKdEUIJKgqe5IwRSKd7+KhibEWdaKwgjLj0DRSHA9biAIqGBk05lw=="],
 

@@ -63,12 +63,15 @@ import {
   getStoryIndex,
   getLyncSyncSnapshot,
   subscribeLyncSyncStatus,
+  broadcastStoryPresence,
+  leaveStoryPresence,
   getAuthorName,
   setAuthorName,
   getAuthorshipDisplay,
   setAuthorshipDisplay,
   hasLiveStoryClient,
   type LyncSyncSnapshot,
+  type PresenceParticipant,
   type AuthorshipDisplay,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
@@ -109,6 +112,63 @@ function useLyncSyncIndicator(): LyncSyncSnapshot {
   }, []);
 
   return status;
+}
+
+// A textile-browser writer publishes presence with via = "textile-browser";
+// anything else is a model/agent driving the same loom. The roster is keyed by
+// author identity (the person), so one glyph per participant tells human from
+// model at a glance — ambient status, not chrome.
+const HUMAN_VIA = "textile-browser";
+
+function peerKind(peer: PresenceParticipant): "human" | "model" {
+  const via = peer.state.via;
+  return via !== undefined && via !== HUMAN_VIA ? "model" : "human";
+}
+
+/**
+ * WHO'S HERE — the other participants present on the loom the person is standing
+ * on, live from lync presence-awareness. Keyed by author identity; each peer
+ * shows a human/model glyph, their name, their focus node, and a typing pip.
+ * Quiet by design: it sits in the status strip and renders nothing when alone.
+ */
+function WhosHere({ roster }: { roster: PresenceParticipant[] }) {
+  if (roster.length === 0) return null;
+  return (
+    <span
+      className="lync-roster"
+      aria-label={`${roster.length} other ${roster.length === 1 ? "writer" : "writers"} here`}
+    >
+      {roster.map((peer) => {
+        const kind = peerKind(peer);
+        const focus = peer.state.focus ?? null;
+        const typing = Boolean(peer.state.typing);
+        return (
+          <span
+            key={peer.client}
+            className={`lync-roster-peer lync-roster-peer--${kind}`}
+            data-roster-peer=""
+            data-actor={peer.state.actor}
+            data-kind={kind}
+            data-focus={focus ?? ""}
+            data-typing={typing ? "true" : "false"}
+            title={`${peer.state.actor} (${kind})${focus ? ` · on ${focus}` : ""}${
+              typing ? " · typing…" : ""
+            }`}
+          >
+            <span className="lync-roster-glyph" aria-hidden="true">
+              {kind === "model" ? "◆" : "●"}
+            </span>
+            <span className="lync-roster-name">{peer.state.actor}</span>
+            {typing && (
+              <span className="lync-roster-typing" aria-hidden="true">
+                …
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 function LyncSyncIndicator({ status }: { status: LyncSyncSnapshot }) {
@@ -329,6 +389,22 @@ export const GamepadInterface = () => {
     }
     return node;
   }, [storyTree, currentDepth, selectedOptions]);
+
+  // Broadcast THIS writer's presence onto the loom they're standing on, so peers
+  // in other browsers see us in their who's-here roster: our focus is the node
+  // under the cursor; we're "typing" while composing (edit overlay) or generating.
+  // The identity (actor + via) is the SAME as durable turns (getStoryAuthorship),
+  // so the roster keys on who a person actually is. No-op when local-only.
+  const focusNodeId = highlightedNode?.id ?? null;
+  const isComposing = screen === "edit" || isAnyGenerating;
+  useEffect(() => {
+    if (!currentLoomId || !currentLoomReady) return;
+    broadcastStoryPresence(currentLoomId, focusNodeId, isComposing);
+  }, [currentLoomId, currentLoomReady, focusNodeId, isComposing]);
+
+  // Leave the loom's roster when the interface unmounts (tab close/navigation),
+  // so peers drop us at once rather than waiting out the TTL.
+  useEffect(() => () => leaveStoryPresence(), []);
 
   const storyTextRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion =
@@ -1302,6 +1378,7 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
+            <WhosHere roster={lyncSyncStatus.roster} />
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
         </section>

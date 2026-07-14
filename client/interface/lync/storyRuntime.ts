@@ -13,9 +13,15 @@ import { loomRootId } from "@deepfates/lync/looms";
 import {
   createSyncedStore,
   createWebSocketTransport,
+  type SyncedStore,
   type SyncStatus,
   type SyncTransport,
 } from "@deepfates/lync/synced-store";
+import {
+  createPresenceAwareness,
+  type PresenceAwareness,
+  type PresenceParticipant,
+} from "@deepfates/lync/presence-awareness";
 import {
   isTextStoryLoomMeta,
   textStoryLoomMeta,
@@ -39,10 +45,26 @@ export type StoryReferenceImport =
   | { kind: "index"; indexId: string }
   | { kind: "loom" | "turn" | "thread"; loomId: string; turnId?: TurnId };
 export type LyncSyncState = "connected" | "reconnecting" | "local-only";
-export type LyncSyncSnapshot = {
+/**
+ * The connection half of the sync snapshot — what the transport tells us about
+ * the relay link. `reduceLyncSyncStatus` folds transport events into this.
+ */
+export type LyncSyncConnection = {
   state: LyncSyncState;
   detail: string;
 };
+/**
+ * What the interface reads to render live-share status: the relay connection
+ * PLUS the who's-here roster — the other participants present on the loom the
+ * person is currently standing on, fed by lync's presence-awareness machine.
+ * The roster rides here (next to `.state`) so a single subscription surfaces
+ * both "am I connected" and "who else is here".
+ */
+export type LyncSyncSnapshot = LyncSyncConnection & {
+  /** Remote participants on the active loom (never includes self). */
+  roster: PresenceParticipant[];
+};
+export type { PresenceParticipant } from "@deepfates/lync/presence-awareness";
 export type LyncSyncEvent =
   | { type: "local-only"; detail: string }
   | { type: "connecting" }
@@ -68,7 +90,20 @@ const syncListeners = new Set<() => void>();
 let syncSnapshot: LyncSyncSnapshot = {
   state: "local-only",
   detail: "Sync starts when the browser runtime is ready.",
+  roster: [],
 };
+
+// The presence-awareness machine (from lync 0.4.0). Built alongside the synced
+// store when a relay transport exists; null on server render or local-only. It
+// owns the who's-here roster: our own outbound presence AND the LWW/TTL view of
+// peers, keyed by per-connection client id.
+let presence: PresenceAwareness | null = null;
+// The loom root the person is currently standing on. We only surface the roster
+// for THIS root — peers on other looms are tracked by the machine but not shown.
+let activePresenceRoot: string | null = null;
+// The last presence state we broadcast for the active root, JSON-encoded, so a
+// cursor move that changes nothing does not burn a new clock on the wire.
+let lastSentPresenceKey: string | null = null;
 
 const INDEX_STORAGE_KEY = "textile-lync-v1-index-id";
 const LORE_IMPORT_STORAGE_KEY = "textile-lync-v1-server-lore-imported";
@@ -211,10 +246,17 @@ function getStoryClient() {
     // relay and remote turns arrive through union, so looms and the index
     // update reactively. The transport owns connection and reconnect.
     const transport = buildSyncTransport();
+    let synced: SyncedStore | null = null;
     const store = transport
-      ? createSyncedStore(base, transport, { onStatus: applySyncStatus })
+      ? (synced = createSyncedStore(base, transport, {
+          onStatus: applySyncStatus,
+          // Every inbound presence frame feeds the awareness machine, which
+          // applies LWW-per-client and fires onDelta when the roster moves.
+          onPresence: (root, from, data) => presence?.receive(root, from, data),
+        }))
       : base;
     eventStore = store;
+    if (synced) startPresence(synced);
     // Bind the author to the PERSON's identity (their name, else a stable
     // per-browser anon id) at construction time — lync captures it here.
     const author = storyAuthorFor(getAuthorName(), anonAuthorId());
@@ -248,9 +290,9 @@ export function getStoryLooms(): Looms<
 }
 
 export function reduceLyncSyncStatus(
-  _current: LyncSyncSnapshot,
+  _current: LyncSyncConnection,
   event: LyncSyncEvent,
-): LyncSyncSnapshot {
+): LyncSyncConnection {
   switch (event.type) {
     case "local-only":
       return { state: "local-only", detail: event.detail };
@@ -483,17 +525,149 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function notifySyncListeners() {
+  for (const listener of syncListeners) listener();
+}
+
 function emitLyncSyncEvent(event: LyncSyncEvent) {
   const next = reduceLyncSyncStatus(syncSnapshot, event);
   if (next.state === syncSnapshot.state && next.detail === syncSnapshot.detail) return;
-  syncSnapshot = next;
-  for (const listener of syncListeners) listener();
+  // Preserve the roster across a connection transition — it is folded into the
+  // same snapshot next to `.state`, and a status change must not drop it.
+  syncSnapshot = { ...next, roster: syncSnapshot.roster };
+  notifySyncListeners();
 }
 
 function applySyncStatus(status: SyncStatus) {
   if (status.connection === "online") emitLyncSyncEvent({ type: "connected" });
   else if (status.connection === "connecting") emitLyncSyncEvent({ type: "connecting" });
   else emitLyncSyncEvent({ type: "disconnected" });
+}
+
+// --- Presence: the who's-here roster over lync 0.4.0 presence-awareness ------
+
+/**
+ * Test/tuning overrides for the presence timers, read from window globals so an
+ * e2e can shrink the TTL without touching production defaults (which stay the
+ * lync defaults: ~15s heartbeat, ~30s TTL). Nothing silent: an override only
+ * applies when explicitly set.
+ */
+function presenceTuning(): { ttlMs?: number; heartbeatMs?: number } {
+  if (typeof window === "undefined") return {};
+  const w = window as unknown as {
+    __lyncPresenceTtlMs?: number;
+    __lyncPresenceHeartbeatMs?: number;
+  };
+  const out: { ttlMs?: number; heartbeatMs?: number } = {};
+  if (typeof w.__lyncPresenceTtlMs === "number" && w.__lyncPresenceTtlMs > 0) {
+    out.ttlMs = w.__lyncPresenceTtlMs;
+  }
+  if (typeof w.__lyncPresenceHeartbeatMs === "number" && w.__lyncPresenceHeartbeatMs > 0) {
+    out.heartbeatMs = w.__lyncPresenceHeartbeatMs;
+  }
+  return out;
+}
+
+/**
+ * Build and start the awareness machine over a live synced store. The machine's
+ * `send` is the store's ephemeral presence relay; its `onDelta` recomputes the
+ * roster we surface for the active loom. `start()` runs the real heartbeat + TTL
+ * sweep timers (unref'd, so they never hold the process open).
+ */
+function startPresence(store: SyncedStore): void {
+  if (presence) return;
+  const tuning = presenceTuning();
+  presence = createPresenceAwareness({
+    send: (root, client, data) => store.presence(root, client, data),
+    // Any roster movement on ANY root fires this; we only re-render when it
+    // touches the loom the person is currently on.
+    onDelta: (root) => {
+      if (root === activePresenceRoot) refreshRoster();
+    },
+    ...(tuning.ttlMs !== undefined ? { ttlMs: tuning.ttlMs } : {}),
+    ...(tuning.heartbeatMs !== undefined
+      ? { heartbeatMs: tuning.heartbeatMs }
+      : {}),
+  });
+  presence.start();
+}
+
+/** Recompute the surfaced roster from the machine's view of the active root. */
+function refreshRoster(): void {
+  const roster =
+    presence && activePresenceRoot ? presence.roster(activePresenceRoot) : [];
+  if (rosterEquals(roster, syncSnapshot.roster)) return;
+  syncSnapshot = { ...syncSnapshot, roster };
+  notifySyncListeners();
+}
+
+/** Structural equality on the surfaced roster, to skip no-op re-renders. */
+function rosterEquals(a: PresenceParticipant[], b: PresenceParticipant[]): boolean {
+  if (a.length !== b.length) return false;
+  const byClient = new Map(b.map((p) => [p.client, p]));
+  for (const p of a) {
+    const q = byClient.get(p.client);
+    if (!q) return false;
+    if (
+      q.clock !== p.clock ||
+      q.state.actor !== p.state.actor ||
+      q.state.via !== p.state.via ||
+      (q.state.focus ?? null) !== (p.state.focus ?? null) ||
+      Boolean(q.state.typing) !== Boolean(p.state.typing)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Broadcast THIS participant's presence on the loom they are standing on:
+ *   - `root` is the loom's sync root (the same key peers subscribe to).
+ *   - `actor` + `via` are the SAME durable author identity as turns
+ *     (getStoryAuthorship), so the roster is keyed by who a person actually is.
+ *   - `focus` is the node the cursor is on; `typing` is whether they are
+ *     actively composing/generating.
+ * Switching looms leaves the previous root gracefully so peers drop us there.
+ * A no-op when there is no live presence machine (server render / local-only).
+ */
+export function broadcastStoryPresence(
+  loomId: string,
+  focusNodeId: string | null,
+  typing: boolean,
+): void {
+  if (!presence) return;
+  const root = loomRootId(loomId);
+  // Make sure we are subscribed to this root so peers' presence fans back to us
+  // (idempotent; a no-op once synced).
+  ensureRootSynced(root);
+  if (activePresenceRoot && activePresenceRoot !== root) {
+    presence.setLocal(activePresenceRoot, null);
+    lastSentPresenceKey = null;
+  }
+  activePresenceRoot = root;
+  const { actor, via } = getStoryAuthorship();
+  const state = { actor, via, focus: focusNodeId, typing };
+  const key = JSON.stringify(state);
+  // Dedupe: only mint a new clock when something actually changed. Heartbeats
+  // (liveness) are handled by the machine without bumping the clock.
+  if (key !== lastSentPresenceKey) {
+    presence.setLocal(root, state);
+    lastSentPresenceKey = key;
+  }
+  refreshRoster();
+}
+
+/**
+ * Leave the loom the person was on (they navigated away, or the interface is
+ * unmounting). Peers remove this client from their roster at once.
+ */
+export function leaveStoryPresence(): void {
+  if (!presence || !activePresenceRoot) return;
+  presence.setLocal(activePresenceRoot, null);
+  activePresenceRoot = null;
+  lastSentPresenceKey = null;
+  refreshRoster();
 }
 
 function startLyncSyncMonitor() {

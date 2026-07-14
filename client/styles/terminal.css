@@ -453,6 +453,82 @@ html, body {
   }
 }
 
+/* WHO'S HERE — ambient live-share roster, pinned to the left of the status
+ * strip opposite the sync indicator. Quiet by design: one glyph per participant
+ * (● human, ◆ model), their name, and a typing pip. Theme vars only. */
+.lync-roster {
+  position: absolute;
+  left: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7ch;
+  max-width: min(42vw, 18rem);
+  overflow: hidden;
+  color: var(--theme-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.85;
+  pointer-events: auto;
+}
+
+.lync-roster-peer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35ch;
+  max-width: 9rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lync-roster-glyph {
+  font-size: 0.62em;
+  line-height: 1;
+}
+
+.lync-roster-peer--human .lync-roster-glyph {
+  color: var(--theme-focused-foreground);
+}
+
+.lync-roster-peer--model .lync-roster-glyph {
+  color: var(--primary-color, var(--theme-muted));
+}
+
+.lync-roster-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lync-roster-typing {
+  color: var(--theme-focused-foreground);
+  animation: lync-roster-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes lync-roster-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lync-roster-typing {
+    animation: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .lync-roster {
+    max-width: 45vw;
+  }
+  .lync-roster-peer {
+    max-width: 6rem;
+  }
+}
+
 /* ===== CONTROLS ===== */
 .gamepad-controls {
   display: flex;
