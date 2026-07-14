@@ -31,6 +31,7 @@ import { SettingsMenu } from "./menus/SettingsMenu";
 import { TreeListMenu } from "./menus/TreeListMenu";
 import { ModelsMenu } from "./menus/ModelsMenu";
 import { EditMenu, EDIT_CONTROL_EVENT } from "./menus/EditMenu";
+import { TurnActionsMenu } from "./menus/TurnActionsMenu";
 import { InstallPrompt } from "./components/InstallPrompt";
 import ModeBar from "./components/ModeBar";
 import { Drawer, DRAWER_TABS } from "./components/Drawer";
@@ -194,6 +195,8 @@ export const GamepadInterface = () => {
   const {
     screen,
     setScreen,
+    selectedTurnAction,
+    setSelectedTurnAction,
     drawerTab,
     setDrawerTab,
     expandedModel,
@@ -484,25 +487,47 @@ export const GamepadInterface = () => {
     }
   }, [keepCurrentNode, showImportNotice]);
 
-  // ANNOTATE: prompt for a short note (keyboard-first) and attach it to the
-  // current turn. Loud on failure; a cancelled/empty prompt is a quiet no-op.
-  const handleAnnotateAction = useCallback(async () => {
-    if (typeof window === "undefined") return;
-    const text = window.prompt("Note for this turn:");
-    if (text === null) return;
-    if (!text.trim()) {
-      showImportNotice("Note was empty — nothing saved.");
-      return;
-    }
-    try {
-      await annotateCurrentNode(text);
-      showImportNotice("Note saved ✓");
-    } catch (error) {
-      showImportNotice(
-        error instanceof Error ? error.message : "Could not save the note.",
-      );
-    }
-  }, [annotateCurrentNode, showImportNotice]);
+  // ANNOTATE: open the in-idiom note overlay for the current turn — the same
+  // text surface as EDIT, no native window.prompt. Reachable by touch (the
+  // "note" row of the turn menu) and by the `n` accelerator.
+  const openNote = useCallback(() => {
+    setScreen("note");
+  }, [setScreen]);
+
+  const saveNote = useCallback(
+    async (text: string) => {
+      if (!text.trim()) {
+        showImportNotice("Note was empty — nothing saved.");
+        setScreen(null);
+        return;
+      }
+      try {
+        await annotateCurrentNode(text);
+        showImportNotice("Note saved ✓");
+      } catch (error) {
+        showImportNotice(
+          error instanceof Error ? error.message : "Could not save the note.",
+        );
+      }
+      setScreen(null);
+    },
+    [annotateCurrentNode, showImportNotice, setScreen],
+  );
+
+  // Activate a row of the per-turn action menu: 0=keep 1=note 2=edit.
+  const activateTurnAction = useCallback(
+    async (index: number) => {
+      if (index === 0) {
+        await handleKeepAction();
+        setScreen(null);
+      } else if (index === 1) {
+        setScreen("note");
+      } else {
+        setScreen("edit");
+      }
+    },
+    [handleKeepAction, setScreen],
+  );
 
   const copyText = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -837,9 +862,31 @@ export const GamepadInterface = () => {
       // EDIT overlay — EditMenu owns keyboard via its own window listener.
       // Button taps reach it through a dedicated custom event so the global
       // keyboard hook does not recursively re-handle synthetic keydowns.
-      if (screen === "edit") {
+      if (screen === "edit" || screen === "note") {
         if (key === "Escape" || key === "`") {
           window.dispatchEvent(new CustomEvent(EDIT_CONTROL_EVENT, { detail: key }));
+        }
+        return;
+      }
+
+      // TURN action menu (per-turn: keep / note / edit), opened by B (⌫) in the
+      // reading view. D-pad moves, A chooses, START/SELECT/B dismiss.
+      if (screen === "turn") {
+        if (key === "ArrowUp") {
+          setSelectedTurnAction((i) => (i + 2) % 3);
+          return;
+        }
+        if (key === "ArrowDown") {
+          setSelectedTurnAction((i) => (i + 1) % 3);
+          return;
+        }
+        if (key === "Enter") {
+          void activateTurnAction(selectedTurnAction);
+          return;
+        }
+        if (key === "Escape" || key === "`" || key === "Backspace") {
+          setScreen(null);
+          return;
         }
         return;
       }
@@ -927,7 +974,7 @@ export const GamepadInterface = () => {
         return;
       }
       if (key === "n" || key === "N") {
-        void handleAnnotateAction();
+        openNote();
         return;
       }
 
@@ -981,7 +1028,8 @@ export const GamepadInterface = () => {
         return;
       }
       if (key === "Backspace") {
-        setScreen("edit");
+        setSelectedTurnAction(0);
+        setScreen("turn");
         return;
       }
       if (!(await handleStoryNavigation(key))) {
@@ -989,13 +1037,16 @@ export const GamepadInterface = () => {
       }
     },
     [
+      activateTurnAction,
       closeDrawer,
       cursorOnTabs,
       currentLoomId,
       drawerTab,
       expandedModel,
-      handleAnnotateAction,
+      openNote,
       handleKeepAction,
+      selectedTurnAction,
+      setSelectedTurnAction,
       handleStoryNavigation,
       handleSubmitModel,
       highlightedNode,
@@ -1349,6 +1400,24 @@ export const GamepadInterface = () => {
                 onCancel={() => setScreen(null)}
               />
             </MenuScreen>
+          ) : screen === "turn" ? (
+            <MenuScreen>
+              <TurnActionsMenu
+                node={getCurrentPath()[currentDepth]}
+                selected={selectedTurnAction}
+                onSelect={(index) => void activateTurnAction(index)}
+              />
+            </MenuScreen>
+          ) : screen === "note" ? (
+            <MenuScreen>
+              <EditMenu
+                node={getCurrentPath()[currentDepth]}
+                initialText=""
+                placeholder="Note for this turn…"
+                onSave={saveNote}
+                onCancel={() => setScreen(null)}
+              />
+            </MenuScreen>
           ) : null}
 
           {/* Keep LOOM mounted; hide when a menu is active */}
@@ -1426,7 +1495,7 @@ export const GamepadInterface = () => {
                   </span>
                 );
               }
-              if (screen === "edit") {
+              if (screen === "edit" || screen === "turn" || screen === "note") {
                 return isOffline ? (
                   <span className="text-theme-focused text-sm">⚡ Offline</span>
                 ) : null;
