@@ -545,7 +545,7 @@ html, body {
 }
 
 .story-curation-status__kept::before {
-  content: "\1F516"; /* 🔖 bookmark */
+  content: "\2713"; /* ✓ check — monochrome text glyph, takes the theme colour (no colour emoji in the terminal aesthetic) */
   margin-right: 0.35ch;
   opacity: 0.85;
 }
