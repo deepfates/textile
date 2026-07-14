@@ -1,5 +1,5 @@
 import type { Loom, Turn, TurnId } from "@deepfates/lync";
-import type { StoryNode, StoryOrigin } from "../types";
+import type { StoryAnnotation, StoryNode, StoryOrigin } from "../types";
 import type {
   StoryDraft,
   StoryGeneratedBy,
@@ -24,6 +24,8 @@ export interface ReadableTurnMeta {
   via?: string;
   generatedBy?: StoryGeneratedBy;
   revises?: TurnId;
+  /** Present only on `role: "mark"` turns — the kept state this swipe records. */
+  kept?: boolean;
 }
 
 /**
@@ -164,11 +166,30 @@ export async function projectStoryTree(
     parent: StoryNode,
     parentTurn: ReadableTurn,
   ) => {
+    // A turn's children are a MIX: real story continuations, plus the curation
+    // turns (keep marks + annotations) that ride the loom's own event log. Peel
+    // the curation turns off so they annotate `parent` instead of appearing as
+    // story branches — the base-model story flow reads exactly as before.
     const children = await loom.childrenOf(parentTurn.id);
-    parent.continuations = children.map(turnToStoryNode);
-    for (let index = 0; index < children.length; index += 1) {
+    const storyChildren: ReadableTurn[] = [];
+    const annotations: StoryAnnotation[] = [];
+    const markTurns: ReadableTurn[] = [];
+    for (const child of children) {
+      const role = child.meta?.role;
+      if (role === "annotation") annotations.push(annotationFromTurn(child));
+      else if (role === "mark") markTurns.push(child);
+      else storyChildren.push(child);
+    }
+    if (annotations.length) parent.annotations = annotations;
+    // Append-only toggle: childrenOf returns marks in append order, so the LAST
+    // mark is the newest — its kept state wins. Nothing is deleted.
+    const latestMark = markTurns.at(-1);
+    if (latestMark) parent.kept = latestMark.meta?.kept === true;
+
+    parent.continuations = storyChildren.map(turnToStoryNode);
+    for (let index = 0; index < storyChildren.length; index += 1) {
       const child = parent.continuations[index];
-      const childTurn = children[index];
+      const childTurn = storyChildren[index];
       if (child && childTurn) {
         await appendChildren(child, childTurn);
       }
@@ -177,6 +198,17 @@ export async function projectStoryTree(
 
   await appendChildren(rootNode, rootTurn);
   return { root: rootNode };
+}
+
+/** Fold a `role: "annotation"` turn into the note shape the reader surfaces. */
+function annotationFromTurn(turn: ReadableTurn): StoryAnnotation {
+  return {
+    id: turn.id,
+    text: deriveTurnText(turn.payload),
+    actor: turn.meta?.author,
+    via: turn.meta?.via,
+    createdAt: turn.createdAt,
+  };
 }
 
 export async function appendStoryDraftChain(
@@ -237,6 +269,45 @@ export async function appendStoryDrafts(
   for (const draft of drafts) {
     await appendStoryDraftChain(loom, parentId, draft, { role: "prose" }, authorship);
   }
+}
+
+/**
+ * KEEP (the swipe): record a kept/discarded state for `targetId` as a
+ * `role: "mark"` turn — a child of the target in the loom's OWN event log, so
+ * it survives reload and rides sync. Append-only: keeping then un-keeping is
+ * two mark turns, and the fold takes the latest. Returns the appended turn.
+ */
+export async function appendKeepMark(
+  loom: StoryLoom,
+  targetId: string,
+  kept: boolean,
+  authorship?: StoryAuthorship,
+): Promise<Turn<StoryTurnPayload, StoryTurnMeta>> {
+  return loom.appendTurn(
+    targetId,
+    { text: "" },
+    withAuthorship({ role: "mark", kept }, authorship),
+  );
+}
+
+/**
+ * ANNOTATE: attach a note to `targetId` as a `role: "annotation"` turn — a child
+ * of the target in the loom's own event log. Append-only; every note is kept.
+ * A blank note is rejected loudly rather than persisted as an empty annotation.
+ */
+export async function appendAnnotation(
+  loom: StoryLoom,
+  targetId: string,
+  text: string,
+  authorship?: StoryAuthorship,
+): Promise<Turn<StoryTurnPayload, StoryTurnMeta>> {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Cannot save an empty annotation.");
+  return loom.appendTurn(
+    targetId,
+    { text: trimmed },
+    withAuthorship({ role: "annotation" }, authorship),
+  );
 }
 
 function turnToStoryNode(turn: ReadableTurn): StoryNode {

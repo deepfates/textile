@@ -9,6 +9,8 @@ import {
   setPreferredChildIndex,
 } from "../lync/storySessionState";
 import {
+  appendAnnotation,
+  appendKeepMark,
   appendStoryDrafts,
   appendStoryRevision,
   projectStoryTree,
@@ -323,6 +325,50 @@ export function useStoryTree(params: StoryParams) {
     ],
   );
 
+  // Resolve the turn the reader cursor sits on — the SAME node Backspace edits
+  // (currentPath[currentDepth]). Keep + annotate both target it.
+  const currentFrontierNode = useCallback((): StoryNode | null => {
+    const path = getCurrentPath();
+    return path[currentDepth] ?? null;
+  }, [getCurrentPath, currentDepth]);
+
+  /**
+   * KEEP the current turn (toggle). Appends a mark turn to the loom's own event
+   * log and refreshes from it, so the kept state re-renders from the log — not
+   * from memory — and survives reload. Returns the new kept state, or null when
+   * there is no live loom or node yet.
+   */
+  const keepCurrentNode = useCallback(async (): Promise<boolean | null> => {
+    const loom = loomsById[currentLoomId];
+    if (!loom) throw new Error("Open or create a story before keeping a turn.");
+    const node = currentFrontierNode();
+    if (!node) return null;
+    const nextKept = !(node.kept === true);
+    await appendKeepMark(loom, node.id, nextKept, getStoryAuthorship());
+    await refreshTreeFromLoom(currentLoomId, loom);
+    touchStoryUpdated(currentLoomId);
+    return nextKept;
+  }, [currentLoomId, loomsById, currentFrontierNode, refreshTreeFromLoom]);
+
+  /**
+   * ANNOTATE the current turn: append a note as an annotation turn in the loom's
+   * own event log, then refresh so it re-renders from the log. Loud on failure
+   * (empty note, no loom) — never silently dropped.
+   */
+  const annotateCurrentNode = useCallback(
+    async (text: string): Promise<boolean> => {
+      const loom = loomsById[currentLoomId];
+      if (!loom) throw new Error("Open or create a story before annotating.");
+      const node = currentFrontierNode();
+      if (!node) return false;
+      await appendAnnotation(loom, node.id, text, getStoryAuthorship());
+      await refreshTreeFromLoom(currentLoomId, loom);
+      touchStoryUpdated(currentLoomId);
+      return true;
+    },
+    [currentLoomId, loomsById, currentFrontierNode, refreshTreeFromLoom],
+  );
+
   const handleStoryNavigation = useCallback(
     async (key: string): Promise<boolean> => {
       // Allow arrow/backspace navigation during generation, but prevent new
@@ -580,5 +626,7 @@ export function useStoryTree(params: StoryParams) {
     getCurrentPath,
     getOptionsAtDepth,
     saveCurrentNodeRevision,
+    keepCurrentNode,
+    annotateCurrentNode,
   };
 }

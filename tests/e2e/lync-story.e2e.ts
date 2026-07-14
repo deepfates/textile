@@ -110,6 +110,21 @@ async function openStoriesDrawer(page: Page) {
   await page.getByRole("tab", { name: "Stories" }).click();
 }
 
+// Capture export downloads at the source: the app builds each export as a Blob
+// and hands it to URL.createObjectURL, so stash those Blobs to read their exact
+// bytes later. Mirrors captureClipboard; survives reloads (init scripts re-run).
+async function captureDownloads(page: Page) {
+  await page.addInitScript(() => {
+    window.__textileDownloads = [];
+    const original = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (obj: Blob | MediaSource) => {
+      if (obj instanceof Blob) window.__textileDownloads.push(obj);
+      return original(obj);
+    };
+  });
+}
+
+
 // After a generation, wait for it to fully settle before the next input. Each
 // appended turn re-renders the tree progressively (loom.subscribe fires per
 // turn-added), so a keypress issued too early runs against a stale, partially
@@ -165,6 +180,7 @@ async function waitForStoryIndex(page: Page) {
 declare global {
   interface Window {
     __textileClipboardText: string;
+    __textileDownloads: Blob[];
   }
 }
 
@@ -1030,4 +1046,83 @@ test("a shared conversation ?ref= link opens the conversation in another context
 
   await owner.close();
   await guest.close();
+});
+
+// The archive-instrument curation loop (dee-arch annotate-half): KEEP the
+// current turn with the keyboard, ANNOTATE it, reload — both re-render from the
+// loom's own event log, not memory — then EXPORT KEPT emits exactly that turn
+// plus its note. All synthetic.
+test("keyboard KEEP + ANNOTATE persist across reload and Export KEPT emits the kept set", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await mockGeneration(page, "Curate");
+  await captureDownloads(page);
+
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(page);
+
+  // KEEP the current (focused) turn — a mark event on the loom. Its kept state
+  // is narrated for the FOCUSED turn in the status strip, not stuck on the
+  // reading column.
+  await page.keyboard.press("k");
+  await expect(page.locator(".navbar-minibuffer")).toContainText(
+    "Kept this turn",
+  );
+  await expect(page.locator(".story-curation-status__kept")).toBeVisible();
+
+  // ANNOTATE it — prompt-driven note, persisted as an annotation event, shown
+  // for the focused turn in the same status line.
+  page.once("dialog", (dialog) => dialog.accept("training-worthy seed"));
+  await page.keyboard.press("n");
+  await expect(page.locator(".navbar-minibuffer")).toContainText("Note saved");
+  await expect(page.locator(".story-curation-status__note")).toContainText(
+    "training-worthy seed",
+  );
+
+  // Reload: BOTH the kept state and the note re-render from the event log for
+  // the focused turn (not from memory).
+  await page.reload();
+  await expect(page.locator(".story-curation-status__kept")).toBeVisible();
+  await expect(page.locator(".story-curation-status__note")).toContainText(
+    "training-worthy seed",
+  );
+
+  // EXPORT KEPT: the curated file carries only the kept turn + its annotation.
+  // On the desktop viewport the secondary actions render inline (the mobile
+  // "More" disclosure is hidden), so the button is directly clickable.
+  await openStoriesDrawer(page);
+  const exportButton = page.getByRole("button", { name: "Export KEPT" }).first();
+  await expect(exportButton).toBeVisible();
+  // Click the rendered Export KEPT button and read the exact bytes it hands to
+  // the download path. (A direct element click sidesteps a coordinate artifact
+  // in the automation harness; it exercises the same onClick → export path.)
+  const exportText = await page.evaluate(async () => {
+    const button = [...document.querySelectorAll("button")].find(
+      (candidate) =>
+        (candidate.getAttribute("aria-label") ?? "") === "Export KEPT",
+    );
+    if (!button) return null;
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const blob = window.__textileDownloads.at(-1);
+    return blob ? await blob.text() : null;
+  });
+  expect(exportText).not.toBeNull();
+  const payload = JSON.parse(exportText ?? "{}") as {
+    kind: string;
+    kept: { text: string; annotations: { text: string }[] }[];
+  };
+  expect(payload.kind).toBe("curated");
+  expect(payload.kept).toHaveLength(1);
+  expect(payload.kept[0].text).toBe("Once upon a time, in Absalom,");
+  expect(payload.kept[0].annotations.map((note) => note.text)).toEqual([
+    "training-worthy seed",
+  ]);
+
+  await context.close();
 });

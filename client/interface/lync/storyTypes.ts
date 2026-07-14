@@ -23,7 +23,9 @@ export type StoryTurnRole =
   | "critique"
   | "judge"
   | "summary"
-  | "annotation";
+  | "annotation"
+  /** A keep/discard swipe on the parent turn; latest wins. See `kept`. */
+  | "mark";
 
 /** Fingerprint of the generation that produced a model turn. */
 export interface StoryGeneratedBy {
@@ -35,6 +37,12 @@ export interface StoryGeneratedBy {
 
 export interface StoryTurnMeta extends TextStoryTurnMeta {
   role: StoryTurnRole;
+  /**
+   * Present ONLY on a `role: "mark"` turn: the kept/discarded state this swipe
+   * records for its parent turn. Append-only — a keep then an un-keep are two
+   * mark turns, and the latest one wins (NOTHING-SILENT: nothing is deleted).
+   */
+  kept?: boolean;
   /**
    * The person's identity (actor). Stamped into `meta` at every append site so
    * it survives lync's buildFold, which drops `event.body.author` but keeps
