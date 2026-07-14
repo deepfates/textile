@@ -3,6 +3,7 @@ import { useCallback, useRef, useEffect, useState, useMemo } from "react";
 import { useKeyboardControls } from "./hooks/useKeyboardControls";
 import { useMenuSystem } from "./hooks/useMenuSystem";
 import { useStoryTree } from "./hooks/useStoryTree";
+import { useConversationImport } from "./hooks/useConversationImport";
 import { useOfflineStatus } from "./hooks/useOfflineStatus";
 import { useScrollSync } from "./hooks/useScrollSync";
 import { useModelCatalog } from "./hooks/useModelCatalog";
@@ -292,6 +293,29 @@ export const GamepadInterface = () => {
     deleteStory,
     saveCurrentNodeRevision,
   } = useStoryTree(menuParams);
+
+  // Drop a conversation-loom snapshot anywhere to import + open it. Lives off
+  // the keyboard grid, so the story flow is untouched; the notice keeps both
+  // success and failure visible (NOTHING-SILENT).
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const showImportNotice = useCallback((message: string) => {
+    setImportNotice(message);
+    window.setTimeout(() => setImportNotice(null), 6000);
+  }, []);
+  useConversationImport({
+    onImported: (result) => {
+      setCurrentLoomId(result.loomId);
+      showImportNotice(
+        `Imported "${result.title}" — ${result.turnCount} ${
+          result.turnCount === 1 ? "turn" : "turns"
+        }`,
+      );
+    },
+    onError: (error) =>
+      showImportNotice(
+        `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+  });
 
   // Compute reverse-chronologically ordered trees for menus
   const orderedKeys = useMemo(
@@ -1234,6 +1258,13 @@ export const GamepadInterface = () => {
                 return (
                   <span className="text-red-500 text-sm" aria-live="polite">
                     {error.message}
+                  </span>
+                );
+              }
+              if (importNotice) {
+                return (
+                  <span className="navbar-minibuffer" aria-live="polite">
+                    {importNotice}
                   </span>
                 );
               }
