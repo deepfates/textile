@@ -367,12 +367,20 @@ export async function importStoryReferenceFromUrl(): Promise<StoryReferenceImpor
   }
 
   const info = await opened.loom.info();
-  if (!isTextStoryLoomMeta(info.meta)) {
-    throw new Error("Reference does not point to a text-story loom");
+  // A shared ?ref= URL may point at a base-model STORY loom or a CONVERSATION
+  // loom (turns authored by different actors) — textile reads both since #65.
+  // Classify loudly: a genuinely-invalid ref (neither profile) still throws, so
+  // nothing wrong opens silently; only VALID conversation looms stop being
+  // rejected.
+  const loomKind = classifyStoryReferenceMeta(info.meta);
+  const sharedTitle =
+    (info.meta as { title?: string } | null | undefined)?.title ??
+    (loomKind === "conversation" ? "Shared conversation" : "Shared Story");
+  if (loomKind === "conversation") {
+    await registerConversationLoomInIndex(info.id, sharedTitle);
+  } else {
+    await addStoryLoomToIndex(info.id, { title: sharedTitle });
   }
-  await addStoryLoomToIndex(info.id, {
-    title: info.meta?.title ?? "Shared Story",
-  });
   return {
     kind: opened.kind,
     loomId: info.id,
@@ -441,6 +449,33 @@ export type ConversationLoomSnapshot = LoomSnapshot<
   ConversationTurnMeta
 >;
 
+/** A conversation loom is any lync loom whose meta marks `profile: "conversation"`. */
+export function isConversationLoomMeta(
+  meta: unknown,
+): meta is ConversationLoomMeta {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as { profile?: unknown }).profile === "conversation"
+  );
+}
+
+/**
+ * Which kind of loom a shared reference points at. textile reads both a
+ * base-model STORY loom and a CONVERSATION loom (since #65), so a share URL to
+ * either must open. A ref that is NEITHER throws loud and specific — a garbage
+ * or non-loom reference never opens as a blank/corrupt story (NOTHING-SILENT).
+ */
+export function classifyStoryReferenceMeta(
+  meta: unknown,
+): "story" | "conversation" {
+  if (isTextStoryLoomMeta(meta)) return "story";
+  if (isConversationLoomMeta(meta)) return "conversation";
+  throw new Error(
+    "Reference does not point to a readable loom (expected a text-story or conversation loom).",
+  );
+}
+
 /**
  * Parse + VALIDATE a conversation-loom snapshot from JSON text (a file the
  * person drops in, or splice's `convertClaudeSessionToLoomFile` output). Every
@@ -506,12 +541,24 @@ export async function importConversationLoom(
   >;
   const info = await looms.import(snapshot);
   const title = info.meta?.title ?? snapshot.loom.meta?.title ?? "Imported conversation";
-  await upsertLoom(await getStoryIndex(), storyLoomRef(info.id), {
+  await registerConversationLoomInIndex(info.id, title);
+  return { loomId: info.id, title, turnCount: snapshot.turns.length };
+}
+
+/**
+ * Register an already-opened conversation loom in the story index with
+ * `kind: "conversation"`, so the catalog lists it and the generic reader opens
+ * it. Shared by the snapshot import path and the shared-URL open path.
+ */
+async function registerConversationLoomInIndex(
+  loomId: string,
+  title: string,
+): Promise<void> {
+  await upsertLoom(await getStoryIndex(), storyLoomRef(loomId), {
     title,
     kind: "conversation",
     meta: { title },
   });
-  return { loomId: info.id, title, turnCount: snapshot.turns.length };
 }
 
 /** Parse conversation-loom JSON text and import it in one step. */

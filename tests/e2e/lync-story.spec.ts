@@ -1,5 +1,82 @@
 import { Buffer } from "node:buffer";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { createMemoryEventStore } from "@deepfates/lync/memory-log";
+import { createLyncLooms } from "@deepfates/lync/looms";
+
+// Build a SYNTHETIC conversation-loom snapshot file (splice's session→loom
+// adapter shape: turns carry payload.message + payload.text, meta.role/author),
+// written to a temp JSON file so the keyboard "Import conversation" picker can
+// pick it. All synthetic — no real session content.
+async function writeSyntheticConversationFile(opts: {
+  title: string;
+  seed: string;
+  reply: string;
+  model?: string;
+}): Promise<string> {
+  const model = opts.model ?? "claude-synthetic-e2e";
+  const store = createMemoryEventStore();
+  let n = 0;
+  const looms = createLyncLooms<
+    { message: unknown; text: string },
+    { profile: "conversation"; source: string; title: string },
+    { role: string; author: string }
+  >({
+    store,
+    author: { actor: "splice/claude-session-import@0.1" },
+    createId: () => `e2e-conv-${++n}`,
+    now: () => 3000 + n,
+  });
+  const info = await looms.create({
+    profile: "conversation",
+    source: "claude-session",
+    title: opts.title,
+  });
+  const loom = await looms.open(info.id);
+  const q = await loom.appendTurn(
+    null,
+    { message: { role: "user", content: opts.seed }, text: opts.seed },
+    { role: "user", author: "deepfates" },
+  );
+  await loom.appendTurn(
+    q.id,
+    {
+      message: { role: "assistant", model, content: [{ type: "text", text: opts.reply }] },
+      text: opts.reply,
+    },
+    { role: "assistant", author: model },
+  );
+  const snapshot = await loom.export();
+  loom.close();
+  const dir = mkdtempSync(join(tmpdir(), "textile-conv-"));
+  const file = join(dir, "conversation.json");
+  writeFileSync(file, JSON.stringify(snapshot), "utf8");
+  return file;
+}
+
+// Drive the keyboard from the loom view to the Stories-drawer "Import
+// conversation" action (row 1, column 1) without touching the mouse.
+async function focusImportConversationByKeyboard(page: Page) {
+  await page.keyboard.press("`");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".mode-bar-title")).toHaveText("TABS");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Stories" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Enter"); // drop into rows (row 0: Sort)
+  await expect(page.locator(".navbar-minibuffer")).toContainText("Sort");
+  await page.keyboard.press("ArrowDown"); // row 1: + New Story
+  await expect(page.locator(".navbar-minibuffer")).toContainText("+ New Story");
+  await page.keyboard.press("ArrowRight"); // row 1, column 1: Import conversation
+  await expect(page.locator(".navbar-minibuffer")).toContainText(
+    "Import conversation",
+  );
+}
 
 async function mockGeneration(page: Page, prefix: string) {
   let count = 0;
@@ -843,6 +920,113 @@ test("two independent authors co-write one shared loom and converge with honest 
     expect(seed?.actor).toBe("Ada");
     expect(seed?.via).toBe("textile-browser");
   }
+
+  await owner.close();
+  await guest.close();
+});
+
+test("keyboard-reachable Import conversation opens a synthetic conversation loom", async ({
+  page,
+}) => {
+  await mockGeneration(page, "Keyboard import");
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(page);
+
+  const file = await writeSyntheticConversationFile({
+    title: "Synthetic Keyboard Chat",
+    seed: "Reached by keyboard alone?",
+    reply: "Yes — d-pad to Import, Enter opens the picker.",
+  });
+
+  // Navigate to the Import action with the d-pad only (no mouse), then Enter
+  // opens the OS file picker — proving the action is keyboard-reachable.
+  await focusImportConversationByKeyboard(page);
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.keyboard.press("Enter"),
+  ]);
+  await chooser.setFiles(file);
+
+  // The import lands: the notice reports it (NOTHING-SILENT) and the loom is
+  // selected.
+  await expect(page.locator(".navbar-minibuffer")).toContainText(
+    'Imported "Synthetic Keyboard Chat"',
+  );
+
+  // Close the drawer and confirm the conversation opened + renders its turns.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("body")).toContainText("Reached by keyboard alone?");
+});
+
+test("a shared conversation ?ref= link opens the conversation in another context", async ({
+  browser,
+}) => {
+  const owner = await browser.newContext();
+  const page = await owner.newPage();
+  await captureClipboard(page);
+  await mockGeneration(page, "Conv share");
+
+  await page.goto("/");
+  await expect(page.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(page);
+
+  const file = await writeSyntheticConversationFile({
+    title: "Shared Conversation",
+    seed: "Does a conversation share by URL?",
+    reply: "It opens like a story link now.",
+  });
+
+  // Import a conversation via the keyboard picker so it lives in the running app.
+  await focusImportConversationByKeyboard(page);
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.keyboard.press("Enter"),
+  ]);
+  await chooser.setFiles(file);
+  await expect(page.locator(".navbar-minibuffer")).toContainText(
+    'Imported "Shared Conversation"',
+  );
+
+  // Build the CONVERSATION's own share URL with the same app code the "Story
+  // link" action uses (createStoryShareUrl → referenceToUrl), targeting the
+  // conversation entry specifically (not the default lore story).
+  await page.keyboard.press("Escape");
+  const convUrl = await page.evaluate(async () => {
+    const mod = await import("/client/interface/lync/storyRuntime.ts");
+    const entries = await mod.listStoryEntries();
+    const conv = entries.find(
+      (e: { kind?: string }) => e.kind === "conversation",
+    );
+    if (!conv) throw new Error("conversation not registered in the index");
+    return mod.createStoryShareUrl(conv.ref.loomId) as string;
+  });
+  expect(convUrl).toContain("?ref=");
+  // Sanity: the shared ref points at the conversation, not a story loom.
+  expect(referenceFromUrl(convUrl)?.kind).toBe("loom");
+
+  // A fresh context opening that URL sees the conversation (the widened guard in
+  // importStoryReferenceFromUrl opens it instead of throwing).
+  const guest = await browser.newContext();
+  const guestPage = await guest.newPage();
+  await mockGeneration(guestPage, "Guest conv");
+  await guestPage.goto(convUrl);
+  await expect(guestPage.locator("body")).toContainText(
+    "Does a conversation share by URL?",
+  );
+  // And it is registered as a conversation in the guest, not a story.
+  const guestKind = await guestPage.evaluate(async (loomId) => {
+    const mod = await import("/client/interface/lync/storyRuntime.ts");
+    const entries = await mod.listStoryEntries();
+    return entries.find(
+      (e: { ref: { loomId: string } }) => e.ref.loomId === loomId,
+    )?.kind;
+  }, referenceFromUrl(convUrl)?.loomId ?? "");
+  expect(guestKind).toBe("conversation");
 
   await owner.close();
   await guest.close();

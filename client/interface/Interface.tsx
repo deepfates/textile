@@ -1,4 +1,5 @@
 import { useCallback, useRef, useEffect, useState, useMemo } from "react";
+import type { ChangeEvent } from "react";
 
 import { useKeyboardControls } from "./hooks/useKeyboardControls";
 import { useMenuSystem } from "./hooks/useMenuSystem";
@@ -60,6 +61,7 @@ import {
   createStoryIndexShareUrl,
   createStoryShareUrl,
   createStoryThreadShareUrl,
+  importConversationLoomText,
   getStoryReferenceFromLocation,
   getStoryIndex,
   getLyncSyncSnapshot,
@@ -71,6 +73,7 @@ import {
   hasLiveStoryClient,
   type LyncSyncSnapshot,
   type AuthorshipDisplay,
+  type ImportedConversation,
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
 import { AuthorshipIndicator } from "./components/AuthorshipIndicator";
@@ -294,16 +297,18 @@ export const GamepadInterface = () => {
     saveCurrentNodeRevision,
   } = useStoryTree(menuParams);
 
-  // Drop a conversation-loom snapshot anywhere to import + open it. Lives off
-  // the keyboard grid, so the story flow is untouched; the notice keeps both
-  // success and failure visible (NOTHING-SILENT).
+  // Import a conversation-loom snapshot two ways — drop a file anywhere (mouse),
+  // or the keyboard-reachable "Import conversation" action in the Stories drawer
+  // (d-pad → Enter opens the file picker). Both share one result path. Neither
+  // adds a Stories row, so the base-model story flow + drawer row math are
+  // untouched; the notice keeps success AND failure visible (NOTHING-SILENT).
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const showImportNotice = useCallback((message: string) => {
     setImportNotice(message);
     window.setTimeout(() => setImportNotice(null), 6000);
   }, []);
-  useConversationImport({
-    onImported: (result) => {
+  const handleConversationImported = useCallback(
+    (result: ImportedConversation) => {
       setCurrentLoomId(result.loomId);
       showImportNotice(
         `Imported "${result.title}" — ${result.turnCount} ${
@@ -311,11 +316,42 @@ export const GamepadInterface = () => {
         }`,
       );
     },
-    onError: (error) =>
+    [setCurrentLoomId, showImportNotice],
+  );
+  const handleConversationImportError = useCallback(
+    (error: unknown) =>
       showImportNotice(
         `Import failed: ${error instanceof Error ? error.message : String(error)}`,
       ),
+    [showImportNotice],
+  );
+  useConversationImport({
+    onImported: handleConversationImported,
+    onError: handleConversationImportError,
   });
+
+  // Hidden file input driven by the keyboard "Import conversation" action. The
+  // action calls .click() to open the OS picker; the change handler runs the
+  // SAME import path the drop hook uses. Reset value so re-picking the same file
+  // fires change again.
+  const conversationFileInputRef = useRef<HTMLInputElement>(null);
+  const openConversationFilePicker = useCallback(() => {
+    conversationFileInputRef.current?.click();
+  }, []);
+  const handleConversationFileChosen = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.target;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      try {
+        handleConversationImported(await importConversationLoomText(await file.text()));
+      } catch (error) {
+        handleConversationImportError(error);
+      }
+    },
+    [handleConversationImported, handleConversationImportError],
+  );
 
   // Compute reverse-chronologically ordered trees for menus
   const orderedKeys = useMemo(
@@ -623,8 +659,11 @@ export const GamepadInterface = () => {
         "json",
         "thread",
       ];
+      // Rows 0 (Sort → Index link) and 1 (New Story → Import conversation)
+      // each carry exactly one trailing action at column 1; stories (rows 2+)
+      // carry the full sub-action set.
       const maxColumnFor = (index: number) =>
-        index === 0 ? 1 : index < baseOffset ? 0 : columnTypes.length - 1;
+        index < baseOffset ? 1 : columnTypes.length - 1;
       switch (key) {
         case "ArrowUp":
         case "ArrowDown": {
@@ -669,8 +708,12 @@ export const GamepadInterface = () => {
             return;
           }
           if (selectedTreeIndex === 1) {
-            void handleNewTree();
-            setSelectedTreeColumn(0);
+            if (selectedTreeColumn === 1) {
+              openConversationFilePicker();
+            } else {
+              void handleNewTree();
+              setSelectedTreeColumn(0);
+            }
             return;
           }
           const treeKey = orderedKeys[selectedTreeIndex - baseOffset];
@@ -712,6 +755,7 @@ export const GamepadInterface = () => {
       handleShareIndex,
       handleShareStory,
       handleNewTree,
+      openConversationFilePicker,
       orderedKeys,
       scrollCurrentMenuItemIntoView,
       selectedTreeColumn,
@@ -1016,6 +1060,18 @@ export const GamepadInterface = () => {
       data-story-ready={currentLoomReady ? "true" : "false"}
     >
       <InstallPrompt />
+      {/* Hidden picker for the keyboard "Import conversation" action. Off the
+          keyboard grid; triggered by openConversationFilePicker(). */}
+      <input
+        ref={conversationFileInputRef}
+        type="file"
+        accept="application/json,.json"
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ display: "none" }}
+        onChange={handleConversationFileChosen}
+        data-testid="import-conversation-input"
+      />
       <div
         ref={containerRef}
         className={`gamepad-container ${
@@ -1148,6 +1204,7 @@ export const GamepadInterface = () => {
                       void handleNewTree();
                       setSelectedTreeColumn(0);
                     }}
+                    onImportConversation={openConversationFilePicker}
                     onDelete={(key) => {
                       void handleDeleteTree(key);
                       if (selectedTreeIndex > 0) {
@@ -1295,7 +1352,9 @@ export const GamepadInterface = () => {
                         ? selectedTreeIndex === 0
                           ? "Sort"
                           : selectedTreeIndex === 1
-                            ? "+ New Story"
+                            ? selectedTreeColumn === 1
+                              ? "Import conversation"
+                              : "+ New Story"
                             : orderedKeys[selectedTreeIndex - 2] ?? ""
                         : "";
                 return (

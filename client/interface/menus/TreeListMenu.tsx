@@ -73,6 +73,21 @@ const ThreadLinkIcon = () => (
   </svg>
 );
 
+const ImportIcon = () => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+  >
+    <path
+      d="M7.4 1.5h1.2v6.1l2-2 .85.85L8 10.9 4.55 6.45l.85-.85 2 2V1.5zM2.5 10h1.2v3.3h8.6V10h1.2v4.5H2.5V10z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 const MoreIcon = () => (
   <svg
     aria-hidden="true"
@@ -186,12 +201,14 @@ export function getStoryRowPreview({
 
 /**
  * Stories list.  Mirrors the Models-tab row layout:
- *   row 0 — Sort pick (Recent / A→Z / Z→A)
- *   row 1 — + New Story action
+ *   row 0 — Sort pick (Recent / A→Z / Z→A); column 1 is the Index-link action
+ *   row 1 — + New Story action; column 1 is the Import-conversation action
  *   row 2+ — each existing story as an action row whose trailing slot
  *            carries sub-actions (copy links / export JSON / export thread)
  * The cursor is (rowIndex, columnIndex) — column 0 is the story body,
- * columns 1+ are the sub-actions in order.
+ * columns 1+ are the sub-actions in order. Rows 0 and 1 keep their existing
+ * indices (the e2e row math depends on it); Import rides row 1 as a trailing
+ * action, adding NO new row.
  */
 export const TreeListMenu = ({
   trees,
@@ -204,6 +221,7 @@ export const TreeListMenu = ({
   onToggleSort,
   onSelect,
   onNew,
+  onImportConversation,
   onShareStory,
   onShareThread,
   onShareIndex,
@@ -216,6 +234,7 @@ export const TreeListMenu = ({
   const selectedPositionRef = useRef({ selectedColumn, selectedIndex });
   const [openSecondaryKey, setOpenSecondaryKey] = useState<string | null>(null);
   const orderedKeys = orderKeysByStorySort(trees, sortOrder);
+  const hasImport = Boolean(onImportConversation);
   const hasShare = Boolean(onShareStory);
   const hasThreadShare = Boolean(onShareThread);
   const hasIndexShare = Boolean(onShareIndex);
@@ -308,6 +327,24 @@ export const TreeListMenu = ({
           onNew?.();
           onHighlight?.(1, 0);
         }}
+        trailing={
+          hasImport ? (
+            <div className="story-action-cluster" role="group">
+              <StoryActionButton
+                label="Import conversation"
+                icon={<ImportIcon />}
+                selected={selectedIndex === 1 && selectedColumn === 1}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setOpenSecondaryKey(null);
+                  onImportConversation?.();
+                  onHighlight?.(1, 1);
+                }}
+                onFocus={() => onHighlight?.(1, 1)}
+              />
+            </div>
+          ) : undefined
+        }
       />
       {orderedKeys.map((key, index) => {
         const tree = trees[key];
