@@ -1,5 +1,4 @@
-import { assertTextStoryTurn } from "@deepfates/lync/profiles/text-story";
-import type { Turn } from "@deepfates/lync";
+import type { Loom, Turn, TurnId } from "@deepfates/lync";
 import type { StoryNode, StoryOrigin } from "../types";
 import type {
   StoryDraft,
@@ -10,6 +9,85 @@ import type {
 } from "./storyTypes";
 
 type StoryTurn = Turn<StoryTurnPayload, StoryTurnMeta>;
+
+/**
+ * The read-layer view of a turn's `meta`: the provenance + role fields the
+ * reader surfaces, widened PAST the story-specific role union so the SAME fold
+ * reads a CONVERSATION loom (roles `"user"`/`"assistant"`) exactly as it reads a
+ * story loom. `author`/`via`/`generatedBy` are the dee-9y0k provenance fields —
+ * reused here, not reinvented, because provenance is first-class when reading a
+ * multi-actor record.
+ */
+export interface ReadableTurnMeta {
+  role?: string;
+  author?: string;
+  via?: string;
+  generatedBy?: StoryGeneratedBy;
+  revises?: TurnId;
+}
+
+/**
+ * Any lync loom the reader can project — a story loom OR a non-story loom (a
+ * conversation loom today; other shapes later). The payload is `unknown` on
+ * purpose: `deriveTurnText` pulls display text from whichever field carries it
+ * (`text` for story turns, `message` for conversation turns), so the reader is
+ * not hardcoded to `StoryTurnPayload`. Story looms are assignable to this type.
+ */
+export type ReadableLoom = Loom<unknown, unknown, ReadableTurnMeta>;
+type ReadableTurn = Turn<unknown, ReadableTurnMeta>;
+
+/**
+ * Derive a turn's displayable text WITHOUT assuming story shape. A story turn
+ * carries `payload.text`; a conversation turn (what splice's
+ * lync-claude-session emits, and what a hand-made conversation loom stamps)
+ * carries `payload.message` — a string, or a structured Claude message whose
+ * `content` holds the text. We read the first field that yields text.
+ *
+ * A payload with NO readable field is NOT silently blanked (that would hide a
+ * shape the reader can't yet open): it throws, loud and specific, so an
+ * unreadable loom surfaces instead of rendering empty turns.
+ */
+export function deriveTurnText(payload: unknown): string {
+  if (payload && typeof payload === "object") {
+    const record = payload as { text?: unknown; message?: unknown };
+    if (typeof record.text === "string") return record.text;
+    if (typeof record.message === "string") return record.message;
+    const fromMessage = textFromMessage(record.message);
+    if (fromMessage !== null) return fromMessage;
+  }
+  throw new Error(
+    "Turn payload has no readable text: expected a `text` (story) or " +
+      "`message` (conversation) field.",
+  );
+}
+
+/**
+ * Pull text out of a structured message object (the real splice
+ * lync-claude-session payload keeps the raw Claude `message`, whose `content`
+ * is a string or an array of content blocks). String content wins; an array
+ * concatenates its text blocks. Returns null when nothing text-like is found.
+ */
+function textFromMessage(message: unknown): string | null {
+  if (!message || typeof message !== "object") return null;
+  const record = message as { text?: unknown; content?: unknown };
+  if (typeof record.text === "string") return record.text;
+  const content = record.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object") {
+          const text = (block as { text?: unknown }).text;
+          if (typeof text === "string") return text;
+        }
+        return "";
+      })
+      .filter((part) => part.length > 0);
+    if (parts.length > 0) return parts.join("");
+  }
+  return null;
+}
 
 /**
  * Identity stamped into a turn's `meta` at append time. `actor`/`via` travel in
@@ -37,19 +115,25 @@ function withAuthorship(
 
 /**
  * Derive origin EXPLICITLY from carried meta, never by absence alone:
- *   - `generatedBy` present  -> model
- *   - a person's `author` present (and no generatedBy) -> human
- *   - neither (old/imported turn with no identity) -> unknown
- * An unknowable turn reads "unknown", NEVER a silent "human".
+ *   - `generatedBy` present            -> model
+ *   - `role` is `"assistant"`          -> model (a conversation model turn)
+ *   - `role` is `"user"`               -> human (a conversation person turn)
+ *   - a person's `author` present      -> human
+ *   - none of the above                -> unknown
+ * The `role` rules read a CONVERSATION loom's origin from its explicit role,
+ * not by absence — a story turn never carries `"user"`/`"assistant"`, so story
+ * origins are unchanged. An unknowable turn reads "unknown", NEVER silent "human".
  */
-function originFromMeta(meta: StoryTurnMeta | undefined): StoryOrigin {
+function originFromMeta(meta: ReadableTurnMeta | undefined): StoryOrigin {
   if (meta?.generatedBy) return "model";
+  if (meta?.role === "assistant") return "model";
+  if (meta?.role === "user") return "human";
   if (meta?.author) return "human";
   return "unknown";
 }
 
 export async function projectStoryTree(
-  loom: StoryLoom,
+  loom: ReadableLoom,
   fallbackRootText = "",
 ): Promise<{ root: StoryNode }> {
   const rootTurns = await loom.childrenOf(null);
@@ -73,13 +157,12 @@ export async function projectStoryTree(
   );
   const latestRootRevision = rootRevisions.at(-1);
   if (latestRootRevision) {
-    assertTextStoryTurn(latestRootRevision);
-    rootNode.text = latestRootRevision.payload.text;
+    rootNode.text = deriveTurnText(latestRootRevision.payload);
   }
 
   const appendChildren = async (
     parent: StoryNode,
-    parentTurn: StoryTurn,
+    parentTurn: ReadableTurn,
   ) => {
     const children = await loom.childrenOf(parentTurn.id);
     parent.continuations = children.map(turnToStoryNode);
@@ -156,12 +239,11 @@ export async function appendStoryDrafts(
   }
 }
 
-function turnToStoryNode(turn: StoryTurn): StoryNode {
-  assertTextStoryTurn(turn);
+function turnToStoryNode(turn: ReadableTurn): StoryNode {
   const meta = turn.meta;
   return {
     id: turn.id,
-    text: turn.payload.text,
+    text: deriveTurnText(turn.payload),
     continuations: [],
     origin: originFromMeta(meta),
     actor: meta?.author,

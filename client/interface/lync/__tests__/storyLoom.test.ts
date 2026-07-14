@@ -299,7 +299,10 @@ describe("Textile story loom", () => {
     expect(root.continuations?.[0]?.origin).toBe("model");
   });
 
-  it("rejects turns outside the text-story payload contract", async () => {
+  it("rejects turns with no readable text field, loudly (never blanks them)", async () => {
+    // The generic reader accepts story `text` OR conversation `message`. A
+    // payload carrying NEITHER is a shape the reader can't open yet — it must
+    // surface loudly, never render as a silent blank turn (NOTHING-SILENT).
     const looms = createLooms();
     const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
     const loom = await looms.open(info.id);
@@ -314,7 +317,7 @@ describe("Textile story loom", () => {
     await unsafeLoom.appendTurn(null, { value: "Start" }, { role: "prose" });
 
     await expect(projectStoryTree(loom, "Start")).rejects.toThrow(
-      "Expected text-story turn payload",
+      "Turn payload has no readable text",
     );
   });
 });
