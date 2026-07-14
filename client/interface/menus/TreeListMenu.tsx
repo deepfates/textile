@@ -88,6 +88,21 @@ const ImportIcon = () => (
   </svg>
 );
 
+const KeepIcon = () => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+  >
+    <path
+      d="M4 2h8v12l-4-2.6L4 14V2zm1 1v9.2l3-1.95 3 1.95V3H5z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 const MoreIcon = () => (
   <svg
     aria-hidden="true"
@@ -227,6 +242,7 @@ export const TreeListMenu = ({
   onShareIndex,
   onExportJson,
   onExportThread,
+  onExportKept,
   onHighlight,
 }: TreeListProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -240,6 +256,7 @@ export const TreeListMenu = ({
   const hasIndexShare = Boolean(onShareIndex);
   const hasJson = Boolean(onExportJson);
   const hasThread = Boolean(onExportThread);
+  const hasKept = Boolean(onExportKept);
   const shareColumn = hasShare ? 1 : -1;
   const threadShareColumn = hasThreadShare ? 1 + (hasShare ? 1 : 0) : -1;
   const jsonColumn = hasJson
@@ -247,6 +264,13 @@ export const TreeListMenu = ({
     : -1;
   const threadColumn = hasThread
     ? 1 + (hasShare ? 1 : 0) + (hasThreadShare ? 1 : 0) + (hasJson ? 1 : 0)
+    : -1;
+  const keptColumn = hasKept
+    ? 1 +
+      (hasShare ? 1 : 0) +
+      (hasThreadShare ? 1 : 0) +
+      (hasJson ? 1 : 0) +
+      (hasThread ? 1 : 0)
     : -1;
 
   useEffect(() => {
@@ -367,15 +391,21 @@ export const TreeListMenu = ({
           hasThread &&
           selectedIndex === rowIndex &&
           selectedColumn === threadColumn;
+        const keptSelected =
+          hasKept &&
+          selectedIndex === rowIndex &&
+          selectedColumn === keptColumn;
 
-        const secondarySelected = Boolean(jsonSelected || threadSelected);
+        const secondarySelected = Boolean(
+          jsonSelected || threadSelected || keptSelected,
+        );
         const secondaryOpen = openSecondaryKey === key;
         const secondaryActionsId = `story-secondary-actions-${rowIndex}`;
         const toggleSecondaryActions = () => {
           setOpenSecondaryKey((openKey) => (openKey === key ? null : key));
         };
         const secondaryActions =
-          hasJson || hasThread ? (
+          hasJson || hasThread || hasKept ? (
             <div
               id={secondaryActionsId}
               className="story-secondary-actions"
@@ -408,6 +438,21 @@ export const TreeListMenu = ({
                     setOpenSecondaryKey(null);
                   }}
                   onFocus={() => onHighlight?.(rowIndex, threadColumn)}
+                />
+              ) : null}
+              {hasKept ? (
+                <StoryActionButton
+                  label="Export KEPT"
+                  icon={<KeepIcon />}
+                  selected={Boolean(keptSelected)}
+                  secondary
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onExportKept?.(key);
+                    onHighlight?.(rowIndex, keptColumn);
+                    setOpenSecondaryKey(null);
+                  }}
+                  onFocus={() => onHighlight?.(rowIndex, keptColumn)}
                 />
               ) : null}
             </div>
@@ -485,6 +530,8 @@ export const TreeListMenu = ({
                         onHighlight?.(rowIndex, jsonColumn);
                       } else if (threadSelected) {
                         onHighlight?.(rowIndex, threadColumn);
+                      } else if (keptSelected) {
+                        onHighlight?.(rowIndex, keptColumn);
                       }
                     }}
                   >

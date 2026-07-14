@@ -53,6 +53,7 @@ import {
   type StorySortOption,
 } from "./utils/storyMeta";
 import {
+  downloadKeptStoryJson,
   downloadStoryThreadText,
   downloadStoryTreeJson,
   getStoryPrimaryPath,
@@ -77,6 +78,7 @@ import {
 } from "./lync/storyRuntime";
 import { getRegisteredMode } from "./modes/modeRegistry";
 import { AuthorshipIndicator } from "./components/AuthorshipIndicator";
+import { CurationIndicator } from "./components/CurationIndicator";
 
 const DEFAULT_PARAMS = {
   temperature: 1.0,
@@ -295,6 +297,8 @@ export const GamepadInterface = () => {
     createStory,
     deleteStory,
     saveCurrentNodeRevision,
+    keepCurrentNode,
+    annotateCurrentNode,
   } = useStoryTree(menuParams);
 
   // Import a conversation-loom snapshot two ways — drop a file anywhere (mouse),
@@ -455,6 +459,50 @@ export const GamepadInterface = () => {
     },
     [currentLoomId, getCurrentPath, trees]
   );
+
+  const handleExportKept = useCallback(
+    (key: string) => {
+      const tree = trees[key];
+      if (!tree) return;
+      downloadKeptStoryJson(key, tree);
+    },
+    [trees]
+  );
+
+  // KEEP (the swipe): toggle the kept state of the current turn. Feedback rides
+  // the shared minibuffer notice so the result is visible, never silent — and a
+  // failure (no story yet) surfaces the same way.
+  const handleKeepAction = useCallback(async () => {
+    try {
+      const kept = await keepCurrentNode();
+      if (kept === null) return;
+      showImportNotice(kept ? "Kept this turn ✓" : "Discarded (un-kept)");
+    } catch (error) {
+      showImportNotice(
+        error instanceof Error ? error.message : "Could not keep this turn.",
+      );
+    }
+  }, [keepCurrentNode, showImportNotice]);
+
+  // ANNOTATE: prompt for a short note (keyboard-first) and attach it to the
+  // current turn. Loud on failure; a cancelled/empty prompt is a quiet no-op.
+  const handleAnnotateAction = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const text = window.prompt("Note for this turn:");
+    if (text === null) return;
+    if (!text.trim()) {
+      showImportNotice("Note was empty — nothing saved.");
+      return;
+    }
+    try {
+      await annotateCurrentNode(text);
+      showImportNotice("Note saved ✓");
+    } catch (error) {
+      showImportNotice(
+        error instanceof Error ? error.message : "Could not save the note.",
+      );
+    }
+  }, [annotateCurrentNode, showImportNotice]);
 
   const copyText = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -652,13 +700,9 @@ export const GamepadInterface = () => {
       // Row 0 is Sort, row 1 is "+ New Story", rows 2+ are the stories.
       const baseOffset = 2;
       const totalItems = orderedKeys.length + baseOffset;
-      const columnTypes: Array<"story" | "share" | "thread-link" | "json" | "thread"> = [
-        "story",
-        "share",
-        "thread-link",
-        "json",
-        "thread",
-      ];
+      const columnTypes: Array<
+        "story" | "share" | "thread-link" | "json" | "thread" | "kept"
+      > = ["story", "share", "thread-link", "json", "thread", "kept"];
       // Rows 0 (Sort → Index link) and 1 (New Story → Import conversation)
       // each carry exactly one trailing action at column 1; stories (rows 2+)
       // carry the full sub-action set.
@@ -731,6 +775,8 @@ export const GamepadInterface = () => {
             handleExportTree(treeKey);
           } else if (columnTypes[selectedTreeColumn] === "thread") {
             handleExportThread(treeKey);
+          } else if (columnTypes[selectedTreeColumn] === "kept") {
+            handleExportKept(treeKey);
           }
           return;
         }
@@ -750,6 +796,7 @@ export const GamepadInterface = () => {
       closeDrawer,
       cycleStorySort,
       handleDeleteTree,
+      handleExportKept,
       handleExportThread,
       handleExportTree,
       handleShareIndex,
@@ -872,6 +919,18 @@ export const GamepadInterface = () => {
         return;
       }
 
+      // KEEP / ANNOTATE the current turn — the curation gestures. Available in
+      // both tree projections (loom + map); they never navigate, so they sit
+      // ahead of the projection-specific handling below.
+      if (key === "k" || key === "K") {
+        void handleKeepAction();
+        return;
+      }
+      if (key === "n" || key === "N") {
+        void handleAnnotateAction();
+        return;
+      }
+
       // Tree view: projection "loom" or "map".
       if (projection === "map") {
         if (key === "Backspace") {
@@ -935,6 +994,8 @@ export const GamepadInterface = () => {
       currentLoomId,
       drawerTab,
       expandedModel,
+      handleAnnotateAction,
+      handleKeepAction,
       handleStoryNavigation,
       handleSubmitModel,
       highlightedNode,
@@ -1225,6 +1286,7 @@ export const GamepadInterface = () => {
                     }}
                     onExportJson={handleExportTree}
                     onExportThread={handleExportThread}
+                    onExportKept={handleExportKept}
                     onHighlight={handleStoryHighlight}
                   />
                 </MenuScreen>
@@ -1394,10 +1456,21 @@ export const GamepadInterface = () => {
               );
             })()}
             {onLoom && projection === "loom" ? (
-              <AuthorshipIndicator
-                node={getCurrentPath()[getCurrentPath().length - 1]}
-                mode={authorshipDisplay}
-              />
+              <div className="story-focus-cluster">
+                <AuthorshipIndicator
+                  node={getCurrentPath()[getCurrentPath().length - 1]}
+                  mode={authorshipDisplay}
+                />
+                {/* KEEP/ANNOTATE act on the turn under the cursor
+                    (path[currentDepth], same as EDIT), so its curation state is
+                    narrated for THAT node — a property of focus, not chrome. */}
+                <CurationIndicator node={getCurrentPath()[currentDepth]} />
+              </div>
+            ) : null}
+            {onLoom && projection === "map" ? (
+              <div className="story-focus-cluster story-focus-cluster--map">
+                <CurationIndicator node={highlightedNode} />
+              </div>
             ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>

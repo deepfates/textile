@@ -22,6 +22,20 @@ export interface StoryGeneratedBy {
   textSplitting?: boolean;
 }
 
+/**
+ * A note attached to a turn — a `role: "annotation"` turn folded onto its
+ * parent node. The curation half of the archive instrument: the person's own
+ * words about a thread they are keeping.
+ */
+export interface StoryAnnotation {
+  id: string;
+  text: string;
+  /** The person who wrote the note. */
+  actor?: string;
+  via?: string;
+  createdAt: number;
+}
+
 export interface StoryNode {
   id: string;
   text: string;
@@ -34,6 +48,14 @@ export interface StoryNode {
   via?: string;
   /** Present only for model turns; absent marks a human/unknown turn. */
   generatedBy?: StoryGeneratedBy;
+  /**
+   * Whether this turn is KEPT for export — resolved from the latest `mark`
+   * turn in the fold. Undefined when never marked. Set only when marked so the
+   * fold output stays clean for un-curated stories.
+   */
+  kept?: boolean;
+  /** Notes attached to this turn (annotation turns), in append order. */
+  annotations?: StoryAnnotation[];
 }
 
 export interface MenuScreenProps {
@@ -85,6 +107,7 @@ export interface TreeListProps {
   onShareIndex?: () => void;
   onExportJson?: (key: string) => void;
   onExportThread?: (key: string) => void;
+  onExportKept?: (key: string) => void;
   onHighlight?: (index: number, column: number) => void;
 }
 

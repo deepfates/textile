@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { createTestLoomClient } from "@deepfates/lync/client/testing";
 import { textStoryLoomMeta } from "@deepfates/lync/profiles/text-story";
 import {
+  appendAnnotation,
+  appendKeepMark,
   appendStoryDrafts,
   appendStoryRevision,
   projectStoryTree,
@@ -297,6 +299,77 @@ describe("Textile story loom", () => {
     expect(root.origin).toBe("unknown");
     // An imported turn carrying generatedBy still reads as model.
     expect(root.continuations?.[0]?.origin).toBe("model");
+  });
+
+  it("keeps a turn as a mark event that survives a reload and un-keeps", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    const seed = await loom.appendTurn(null, { text: "Start" }, { role: "prose" });
+    await appendStoryDrafts(loom, seed.id, [{ text: "A" }]);
+    const [child] = await loom.childrenOf(seed.id);
+
+    // KEEP the child turn.
+    await appendKeepMark(loom, child.id, true, {
+      actor: "ada",
+      via: "textile-browser",
+    });
+
+    // Reload: a FRESH loom handle re-folds from the event log, not memory.
+    const reopened = await looms.open(info.id);
+    const kept = await projectStoryTree(reopened, "Start");
+    expect(kept.root.continuations?.[0]?.kept).toBe(true);
+    // The mark turn is NOT a story continuation — story flow is unchanged.
+    expect(kept.root.continuations?.map((n) => n.text)).toEqual(["A"]);
+    expect(kept.root.continuations?.[0]?.continuations).toEqual([]);
+
+    // UN-KEEP: append a second mark; the latest wins, nothing is deleted.
+    await appendKeepMark(loom, child.id, false);
+    const unkept = await projectStoryTree(await looms.open(info.id), "Start");
+    expect(unkept.root.continuations?.[0]?.kept).toBe(false);
+  });
+
+  it("annotates a turn as a note event (parent=turn) that survives a reload", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    const seed = await loom.appendTurn(null, { text: "Start" }, { role: "prose" });
+    await appendStoryDrafts(loom, seed.id, [{ text: "A" }]);
+    const [child] = await loom.childrenOf(seed.id);
+
+    const note = await appendAnnotation(loom, child.id, "  keep this one  ", {
+      actor: "ada",
+      via: "textile-browser",
+    });
+    // The annotation is a real turn parented to the target turn.
+    expect(note.parentId).toBe(child.id);
+    expect(note.meta?.role).toBe("annotation");
+    expect(note.payload).toEqual({ text: "keep this one" });
+
+    // Reload: the note re-renders on its node from the event log.
+    const reloaded = await projectStoryTree(await looms.open(info.id), "Start");
+    const annotated = reloaded.root.continuations?.[0];
+    expect(annotated?.annotations).toEqual([
+      {
+        id: note.id,
+        text: "keep this one",
+        actor: "ada",
+        via: "textile-browser",
+        createdAt: note.createdAt,
+      },
+    ]);
+    // The note is not a story continuation.
+    expect(annotated?.continuations).toEqual([]);
+  });
+
+  it("rejects an empty annotation, loudly (never persists a blank note)", async () => {
+    const looms = createLooms();
+    const info = await looms.create(textStoryLoomMeta({ title: "Story" }));
+    const loom = await looms.open(info.id);
+    const seed = await loom.appendTurn(null, { text: "Start" }, { role: "prose" });
+    await expect(appendAnnotation(loom, seed.id, "   ")).rejects.toThrow(
+      "Cannot save an empty annotation",
+    );
   });
 
   it("rejects turns with no readable text field, loudly (never blanks them)", async () => {

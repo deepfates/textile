@@ -505,6 +505,64 @@ html, body {
   opacity: 0.66;
 }
 
+/* Focused-turn cluster — the authorship chip + the curation state for the turn
+   the cursor is ON, sharing the bottom strip's left slot as ONE narration line.
+   Nesting flips the authorship chip from absolute to static so the two sit side
+   by side. */
+.story-focus-cluster {
+  position: absolute;
+  left: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7ch;
+  max-width: min(58vw, 24rem);
+  min-width: 0;
+}
+
+.story-focus-cluster .story-authorship-status {
+  position: static;
+  left: auto;
+  flex: 0 0 auto;
+}
+
+/* Curation state for the focused turn: a whisper-quiet KEPT token and the note
+   text, muted theme vars only — NEVER the reserved focus accent, and never a
+   badge on the reading column. Shown only when the focused turn is kept or
+   annotated; otherwise the component renders nothing. */
+.story-curation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--theme-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.74;
+  user-select: none;
+}
+
+.story-curation-status__kept::before {
+  content: "\2713"; /* ✓ check — monochrome text glyph, takes the theme colour (no colour emoji in the terminal aesthetic) */
+  margin-right: 0.35ch;
+  opacity: 0.85;
+}
+
+.story-curation-status__note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-curation-status__note::before {
+  content: "\270E"; /* ✎ pencil */
+  margin-right: 0.4ch;
+  opacity: 0.7;
+}
+
 @media (max-width: 520px) {
   .lync-sync-status {
     max-width: 7.5rem;
