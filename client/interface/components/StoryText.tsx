@@ -60,6 +60,8 @@ export function StoryText({
               <span
                 className={spanClasses.join(" ")}
                 data-origin={segment.origin}
+                data-actor={segment.actor}
+                data-via={segment.via}
               >
                 {body}
               </span>
@@ -72,6 +74,8 @@ export function StoryText({
             key={segment.id}
             data-node-id={segment.id}
             data-origin={segment.origin}
+            data-actor={segment.actor}
+            data-via={segment.via}
             className={spanClasses.join(" ")}
           >
             {segment.text}

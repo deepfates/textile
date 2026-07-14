@@ -52,6 +52,31 @@ describe("StoryText prose surface", () => {
     expect(html).toContain('data-origin="model"');
   });
 
+  it("tags every rendered turn with a machine-legible data-actor and data-via", () => {
+    // Authorship (the PERSON's actor, separate from the controller via) is
+    // legible in the DOM per turn, paralleling data-origin — so an outside
+    // checker can read who authored each turn without opening the store.
+    const html = render([human, model], 1);
+    expect(html).toContain('data-actor="ada"');
+    expect(html).toContain('data-via="textile-browser"');
+  });
+
+  it("carries data-actor on the cursor (next-depth) turn too", () => {
+    // The cursor-node branch wraps the frontier turn differently; authorship
+    // must ride it just the same, so sibling enumeration can read the actor of
+    // whichever continuation is on the path.
+    const grace: StoryNode = {
+      id: "g",
+      text: " grace's turn.",
+      continuations: [],
+      origin: "human",
+      actor: "grace",
+      via: "textile-browser",
+    };
+    const html = render([human, grace], 0);
+    expect(html).toContain('data-actor="grace"');
+  });
+
   it("renders NO author byline in the reading column by default (Ambient)", () => {
     const html = render([human, model], 1);
     // Re-homed to the status strip: the prose column stays clean. None of the

@@ -639,3 +639,211 @@ test("generating after a root edit continues from the revised root", async ({
 
   await context.close();
 });
+
+// ---------------------------------------------------------------------------
+// Two-way co-authoring convergence proof.
+//
+// The existing multiplayer test above ("separate browser contexts converge on
+// live updates after opening a shared thread") is ONE-DIRECTIONAL: the owner
+// writes and the guest reads. This test proves the shared loom is genuinely
+// TWO-WAY — two independent browser contexts, each a distinct author, BOTH
+// append turns to ONE shared loom, and the honest replayable scene converges:
+//   * no turn is lost (both authors' concurrent turns survive union-by-id),
+//   * both contexts converge to the SAME tree (identical node-id set), and
+//   * every turn carries honest per-turn authorship — origin (human vs model)
+//     and the PERSON's actor are correct in BOTH contexts, so the guest never
+//     sees the owner's turn as its own (never a false "you") and vice versa.
+// The lync sync is REAL (against the dev relay); only model generation is
+// mocked, so the numbered turn text is deterministic per author.
+
+// Bind a browser context to a named human author BEFORE the app boots. lync
+// captures the author at client construction, reading this localStorage key
+// (see storyRuntime AUTHOR_NAME_STORAGE_KEY); setting it in an init script
+// guarantees every turn this context writes is stamped with the person.
+async function setAuthorName(page: Page, name: string) {
+  await page.addInitScript((authorName) => {
+    window.localStorage.setItem("textile-lync-v1-author-name", authorName);
+  }, name);
+}
+
+interface AuthoredNode {
+  nodeId: string | null;
+  origin: string | null;
+  actor: string | null;
+  via: string | null;
+  text: string;
+}
+
+// Read the current reading-column path with per-turn authorship straight from
+// the DOM. `data-origin`/`data-actor`/`data-via` are the machine-legible
+// authorship attributes the prose spans carry, so an outside checker reads who
+// authored each visible turn without opening the store.
+async function readAuthoredPath(page: Page): Promise<AuthoredNode[]> {
+  return page.evaluate(() => {
+    const spans = Array.from(
+      document.querySelectorAll(".story-text [data-origin]"),
+    );
+    return spans.map((el) => ({
+      nodeId:
+        el.closest("[data-node-id]")?.getAttribute("data-node-id") ?? null,
+      origin: el.getAttribute("data-origin"),
+      actor: el.getAttribute("data-actor"),
+      via: el.getAttribute("data-via"),
+      text: (el.textContent ?? "").trim(),
+    }));
+  });
+}
+
+// The deepest turn on the current path (the selected frontier turn).
+async function frontierNode(page: Page): Promise<AuthoredNode | undefined> {
+  const path = await readAuthoredPath(page);
+  return path.at(-1);
+}
+
+async function toRootDepth(page: Page) {
+  // ArrowUp walks the cursor toward the root; it clamps at depth 0.
+  for (let i = 0; i < 4; i += 1) await page.keyboard.press("ArrowUp");
+}
+
+// Enumerate every child of the root with its authorship. At depth 0 the
+// navigation dots ARE the root's children (getOptionsAtDepth(0) === root
+// continuations); each dot is one child, and ArrowLeft/ArrowRight moves the
+// selected child onto the reading path, where readAuthoredPath can read its
+// origin/actor. Returns one entry per root child.
+async function collectRootChildren(page: Page): Promise<AuthoredNode[]> {
+  await toRootDepth(page);
+  const dots = page.locator(".navigation-dots .navigation-dot:not(.loading)");
+  await expect.poll(async () => dots.count()).toBeGreaterThan(0);
+  const count = await dots.count();
+  // Move to the leftmost sibling (ArrowLeft clamps at index 0).
+  for (let i = 0; i < count; i += 1) await page.keyboard.press("ArrowLeft");
+  const nodes: AuthoredNode[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const node = await frontierNode(page);
+    if (node) nodes.push(node);
+    if (i < count - 1) {
+      const before = node?.nodeId;
+      await page.keyboard.press("ArrowRight");
+      // Wait for the sibling swap to re-render before reading the next one.
+      await expect
+        .poll(async () => (await frontierNode(page))?.nodeId)
+        .not.toBe(before);
+    }
+  }
+  return nodes;
+}
+
+test("two independent authors co-write one shared loom and converge with honest per-turn authorship", async ({
+  browser,
+}) => {
+  // --- Owner "Ada": seed a story and generate three continuations. ----------
+  const owner = await browser.newContext();
+  const adaPage = await owner.newPage();
+  await setAuthorName(adaPage, "Ada");
+  await captureClipboard(adaPage);
+  await mockGeneration(adaPage, "Ada writes");
+
+  await adaPage.goto("/");
+  await expect(adaPage.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await waitForStoryIndex(adaPage);
+
+  await adaPage.keyboard.press("Enter");
+  await expect(adaPage.locator("body")).toContainText(/Ada writes \d\./);
+  await waitForGenerationSettled(adaPage);
+
+  // Share the whole loom so the guest opens the SAME loom (not a copy).
+  await openStoriesDrawer(adaPage);
+  await adaPage.getByRole("button", { name: "Story link" }).first().focus();
+  await adaPage.keyboard.press("Enter");
+  const storyUrl = await readCapturedClipboard(adaPage);
+  const sharedRef = referenceFromUrl(storyUrl);
+  expect(sharedRef?.loomId).toBeTruthy();
+  await adaPage.keyboard.press("Escape");
+  await expect(adaPage.locator(".menu-content")).toHaveCount(0);
+
+  // --- Guest "Grace": open the shared loom; converge on Ada's turns. --------
+  const guest = await browser.newContext();
+  const gracePage = await guest.newPage();
+  await setAuthorName(gracePage, "Grace");
+  await mockGeneration(gracePage, "Grace writes");
+  await gracePage.goto(storyUrl);
+  await expect(gracePage.locator("body")).toContainText(
+    "Once upon a time, in Absalom,",
+  );
+  await expect(gracePage.locator("body")).toContainText(/Ada writes \d\./);
+
+  // Both contexts start from the SAME three-child state before co-authoring.
+  expect(await collectRootChildren(adaPage)).toHaveLength(3);
+  expect(await collectRootChildren(gracePage)).toHaveLength(3);
+
+  // --- The two-way beat: BOTH authors append CONCURRENTLY to the root. ------
+  // Root already has children, so each Enter appends exactly one turn. The two
+  // appends race through the REAL relay; union-by-id must keep both.
+  await toRootDepth(adaPage);
+  await toRootDepth(gracePage);
+  await Promise.all([
+    adaPage.keyboard.press("Enter"),
+    gracePage.keyboard.press("Enter"),
+  ]);
+  await waitForGenerationSettled(adaPage);
+  await waitForGenerationSettled(gracePage);
+
+  // --- Convergence: no turn lost; both converge to the SAME five-turn tree. -
+  const adaChildren = await collectRootChildren(adaPage);
+  const graceChildren = await collectRootChildren(gracePage);
+
+  // Ada's four turns (three initial + one concurrent) plus Grace's one turn.
+  expect(adaChildren).toHaveLength(5);
+  expect(graceChildren).toHaveLength(5);
+
+  // Same tree via union-by-id: identical set of node ids in both contexts.
+  const idSet = (nodes: AuthoredNode[]) =>
+    new Set(nodes.map((n) => n.nodeId));
+  const adaIds = idSet(adaChildren);
+  const graceIds = idSet(graceChildren);
+  expect(adaIds.size).toBe(5);
+  expect([...adaIds].sort()).toEqual([...graceIds].sort());
+
+  // --- Honest per-turn authorship in BOTH contexts. -------------------------
+  // Every co-authored root child is a model turn stamped with the PERSON who
+  // ran it. Ada authored four; Grace authored one. This holds identically in
+  // each context — so Ada's context reads Grace's turn as Grace's (not a false
+  // "you"), and Grace's context reads Ada's four as Ada's.
+  for (const [label, children] of [
+    ["ada-context", adaChildren],
+    ["grace-context", graceChildren],
+  ] as const) {
+    const byAda = children.filter((n) => n.actor === "Ada");
+    const byGrace = children.filter((n) => n.actor === "Grace");
+    expect(byAda, label).toHaveLength(4);
+    expect(byGrace, label).toHaveLength(1);
+    for (const node of children) {
+      expect(node.origin, `${label} origin`).toBe("model");
+      expect(node.via, `${label} via`).toBe("textile-browser");
+    }
+    expect(byAda.map((n) => n.text).sort()).toEqual([
+      "Ada writes 1.",
+      "Ada writes 2.",
+      "Ada writes 3.",
+      "Ada writes 4.",
+    ]);
+    expect(byGrace.map((n) => n.text)).toEqual(["Grace writes 1."]);
+  }
+
+  // --- The human seed is honestly Ada's in BOTH contexts. -------------------
+  // Origin human vs model is real (the seed is human; the continuations are
+  // model), and the guest sees the seed authored by Ada, never falsely "you".
+  for (const page of [adaPage, gracePage]) {
+    await toRootDepth(page);
+    const path = await readAuthoredPath(page);
+    const seed = path.find((n) => n.text.includes("Once upon a time"));
+    expect(seed?.origin).toBe("human");
+    expect(seed?.actor).toBe("Ada");
+    expect(seed?.via).toBe("textile-browser");
+  }
+
+  await owner.close();
+  await guest.close();
+});
