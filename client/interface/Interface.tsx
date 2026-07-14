@@ -1488,7 +1488,6 @@ export const GamepadInterface = () => {
             <div className="terminal-buttons">
               <GamepadButton
                 label="⌫"
-                caption="Back"
                 ariaLabel="B button: go back"
                 active={activeControls.b}
                 onMouseDown={() => handleControlPress("Backspace")}
@@ -1496,7 +1495,6 @@ export const GamepadInterface = () => {
               />
               <GamepadButton
                 label="↵"
-                caption="Choose"
                 ariaLabel="A button: choose"
                 active={activeControls.a}
                 onMouseDown={() => handleControlPress("Enter")}
