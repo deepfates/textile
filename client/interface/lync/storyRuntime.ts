@@ -5,6 +5,7 @@ import {
   referenceFromUrl,
   referenceToUrl,
   type LoomReference,
+  type LoomSnapshot,
   type Looms,
   type TurnId,
 } from "@deepfates/lync";
@@ -404,6 +405,120 @@ export async function addStoryLoomToIndex(
     kind: "story",
     meta,
   });
+}
+
+/* ------------------------- Conversation loom import ------------------------
+ * The entry path that lets textile OPEN a conversation loom (what splice's
+ * session→loom adapter emits) in the running app, not just read one in a test.
+ * A conversation loom is a plain lync loom whose turns carry `payload.message`
+ * + `meta.role`/`meta.author` — the generic reader (projectStoryTree) already
+ * projects it. So opening one is three steps: import the snapshot's events into
+ * textile's SAME event store, register the new loom in the story index (which
+ * the catalog subscribes to), and let useStoryTree render it like any loom. No
+ * presence, no story-flow change — a story loom is untouched by this path.
+ */
+
+/** A conversation turn's payload: the message, plus optional derived text. */
+export interface ConversationTurnPayload {
+  message: unknown;
+  text?: string;
+}
+/** A conversation turn's meta: role + the actor (person or model id). */
+export interface ConversationTurnMeta {
+  role: string;
+  author: string;
+}
+/** A conversation loom's own meta: marks the profile + carries a title. */
+export interface ConversationLoomMeta {
+  profile: "conversation";
+  source?: string;
+  sessionLocator?: string;
+  title?: string;
+}
+export type ConversationLoomSnapshot = LoomSnapshot<
+  ConversationTurnPayload,
+  ConversationLoomMeta,
+  ConversationTurnMeta
+>;
+
+/**
+ * Parse + VALIDATE a conversation-loom snapshot from JSON text (a file the
+ * person drops in, or splice's `convertClaudeSessionToLoomFile` output). Every
+ * malformed input throws loud and specific — NOTHING silently wrong is imported
+ * (a story loom mis-dropped here, a truncated file, a non-conversation profile
+ * all surface as an error the caller shows, never a blank or corrupt story).
+ */
+export function parseConversationSnapshot(text: string): ConversationLoomSnapshot {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      `Not a conversation loom: invalid JSON (${
+        error instanceof Error ? error.message : String(error)
+      }).`,
+    );
+  }
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Not a conversation loom: expected a snapshot object.");
+  }
+  const snapshot = raw as Partial<ConversationLoomSnapshot>;
+  const loom = snapshot.loom;
+  if (!loom || typeof loom !== "object" || typeof loom.id !== "string") {
+    throw new Error("Not a conversation loom: snapshot.loom.id is missing.");
+  }
+  if (!Array.isArray(snapshot.turns)) {
+    throw new Error("Not a conversation loom: snapshot.turns must be an array.");
+  }
+  const profile = (loom.meta as { profile?: unknown } | undefined)?.profile;
+  if (profile !== undefined && profile !== "conversation") {
+    throw new Error(
+      `Not a conversation loom: profile is "${String(profile)}", expected "conversation".`,
+    );
+  }
+  return snapshot as ConversationLoomSnapshot;
+}
+
+export interface ImportedConversation {
+  loomId: string;
+  title: string;
+  turnCount: number;
+}
+
+/**
+ * Import a conversation-loom SNAPSHOT into the running app: replay its events
+ * into textile's event store via the real Looms API, register the new loom in
+ * the story index, and return its id so the caller can select it. The catalog
+ * subscribes to the index, so the loom appears in the Stories list and opens
+ * through useStoryTree exactly like a story loom — navigable, actor + message
+ * per turn (rendered by the generic reader from PR #65).
+ */
+export async function importConversationLoom(
+  snapshot: ConversationLoomSnapshot,
+): Promise<ImportedConversation> {
+  // The store is untyped at the event level; import persists JSON-encoded
+  // payload/meta verbatim, so viewing the story Looms handle through the
+  // conversation payload/meta types is sound (the reader is payload-agnostic).
+  const looms = getStoryLooms() as unknown as Looms<
+    ConversationTurnPayload,
+    ConversationLoomMeta,
+    ConversationTurnMeta
+  >;
+  const info = await looms.import(snapshot);
+  const title = info.meta?.title ?? snapshot.loom.meta?.title ?? "Imported conversation";
+  await upsertLoom(await getStoryIndex(), storyLoomRef(info.id), {
+    title,
+    kind: "conversation",
+    meta: { title },
+  });
+  return { loomId: info.id, title, turnCount: snapshot.turns.length };
+}
+
+/** Parse conversation-loom JSON text and import it in one step. */
+export async function importConversationLoomText(
+  text: string,
+): Promise<ImportedConversation> {
+  return importConversationLoom(parseConversationSnapshot(text));
 }
 
 export async function listStoryEntries() {
