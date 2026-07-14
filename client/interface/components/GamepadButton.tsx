@@ -2,7 +2,6 @@ import { GamepadButtonProps } from "../types";
 
 export const GamepadButton = ({
   label,
-  caption,
   ariaLabel,
   className = "",
   active = false,
@@ -25,6 +24,5 @@ export const GamepadButton = ({
     <span className="gamepad-btn-glyph" aria-hidden="true">
       {label}
     </span>
-    {caption && <span className="gamepad-btn-caption">{caption}</span>}
   </button>
 );

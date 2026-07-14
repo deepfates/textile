@@ -20,7 +20,6 @@ export const DPad = ({
       <span className="gamepad-btn-glyph" aria-hidden="true">
         ▴
       </span>
-      <span className="gamepad-btn-caption">Up</span>
     </button>
     {/* Left */}
     <button
@@ -36,7 +35,6 @@ export const DPad = ({
       <span className="gamepad-btn-glyph" aria-hidden="true">
         ◂
       </span>
-      <span className="gamepad-btn-caption">Left</span>
     </button>
     {/* Right */}
     <button
@@ -52,7 +50,6 @@ export const DPad = ({
       <span className="gamepad-btn-glyph" aria-hidden="true">
         ▸
       </span>
-      <span className="gamepad-btn-caption">Right</span>
     </button>
     {/* Down */}
     <button
@@ -68,7 +65,6 @@ export const DPad = ({
       <span className="gamepad-btn-glyph" aria-hidden="true">
         ▾
       </span>
-      <span className="gamepad-btn-caption">Down</span>
     </button>
   </div>
 );

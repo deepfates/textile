@@ -113,7 +113,6 @@ export interface TreeListProps {
 
 export interface GamepadButtonProps {
   label: string;
-  caption?: string;
   ariaLabel: string;
   className?: string;
   active?: boolean;
