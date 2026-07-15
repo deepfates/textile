@@ -1467,7 +1467,7 @@ export const GamepadInterface = () => {
                 <CurationIndicator node={getCurrentPath()[currentDepth]} />
               </div>
             ) : null}
-            {onLoom && projection === "map" ? (
+            {screen === null && projection === "map" ? (
               <div className="story-focus-cluster story-focus-cluster--map">
                 <CurationIndicator node={highlightedNode} />
               </div>
