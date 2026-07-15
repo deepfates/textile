@@ -17,6 +17,7 @@ import { MenuScreen } from "./components/MenuScreen";
 import { NavigationDots } from "./components/NavigationDots";
 import { StoryText } from "./components/StoryText";
 import { StoryMinimap } from "./components/StoryMinimap";
+import { StoryShelf } from "./components/StoryShelf";
 import { useTheme, THEME_PRESETS } from "./components/ThemeToggle";
 import type {
   ThemeClass,
@@ -111,6 +112,16 @@ const SETTINGS_ROW_LABELS = [
 // (cursor). Growing textile to act on other object types is another builder
 // like this one; the ActionMenu primitive and the key handling stay put.
 const TURN_ACTIONS = ["keep", "note", "edit"] as const;
+
+// The SHELF's per-story action set (the "root bin" second layer). Same shape as
+// TURN_ACTIONS — a stable order that drives both the ActionMenu labels and the
+// key handler. "open" is redundant with A on the shelf but stays so touch users
+// who reached the menu still have it. Kept lowercase to match the turn menu.
+const STORY_ACTIONS = ["open", "share", "export", "delete"] as const;
+const STORY_ACTION_MENU: MenuAction[] = STORY_ACTIONS.map((id) => ({
+  id,
+  label: id,
+}));
 
 function buildTurnActions(node: { kept?: boolean } | undefined): MenuAction[] {
   return TURN_ACTIONS.map((id) => ({
@@ -231,7 +242,11 @@ export const GamepadInterface = () => {
   // Which tree projection (loom / map) is showing when no overlay is up.
   // Persists while the drawer or edit overlay is open, so closing just
   // restores the prior view — no stash/return ref needed.
-  const [projection, setProjection] = useState<"loom" | "map">("loom");
+  const [projection, setProjection] = useState<"loom" | "map" | "bin">("loom");
+  // Cursor across stories on the "shelf" (projection === "bin"), and the cursor
+  // in the per-story action menu (screen === "story-actions").
+  const [selectedShelfIndex, setSelectedShelfIndex] = useState(0);
+  const [selectedStoryAction, setSelectedStoryAction] = useState(0);
   // When cursor is on the drawer's tab strip, Left/Right cycle tabs
   // and ArrowDown drops into the rows beneath.  ArrowUp from the
   // first row comes back up here.
@@ -874,6 +889,52 @@ export const GamepadInterface = () => {
     }, 180);
   }, []);
 
+  // Run one action from the shelf's per-story menu (screen === "story-actions").
+  // Every branch reuses an existing story handler — the shelf just routes them
+  // through the one ActionMenu door instead of the drawer's scattered columns.
+  const activateStoryAction = useCallback(
+    (index: number) => {
+      const storyKey =
+        orderedKeys[Math.min(selectedShelfIndex, orderedKeys.length - 1)];
+      if (!storyKey) {
+        setScreen(null);
+        return;
+      }
+      switch (STORY_ACTIONS[index]) {
+        case "open":
+          touchStoryActive(storyKey);
+          setCurrentLoomId(storyKey);
+          setScreen(null);
+          setProjection("loom");
+          break;
+        case "share":
+          void handleShareStory(storyKey);
+          setScreen(null);
+          break;
+        case "export":
+          handleExportTree(storyKey);
+          setScreen(null);
+          break;
+        case "delete":
+          // Never delete the last story — mirror the drawer's guard. Stay on
+          // the shelf afterwards (screen closes back to projection === "bin").
+          if (orderedKeys.length > 1) handleDeleteTree(storyKey);
+          setScreen(null);
+          break;
+      }
+    },
+    [
+      orderedKeys,
+      selectedShelfIndex,
+      handleShareStory,
+      handleExportTree,
+      handleDeleteTree,
+      setCurrentLoomId,
+      setScreen,
+      setProjection,
+    ]
+  );
+
   const handleControlAction = useCallback(
     async (key: string) => {
       // EDIT overlay — EditMenu owns keyboard via its own window listener.
@@ -900,6 +961,29 @@ export const GamepadInterface = () => {
         }
         if (key === "Enter") {
           void activateTurnAction(selectedTurnAction);
+          return;
+        }
+        if (key === "Escape" || key === "`" || key === "Backspace") {
+          setScreen(null);
+          return;
+        }
+        return;
+      }
+
+      // STORY action menu (per-story: open / share / export / delete), opened by
+      // B (⌫) on the shelf. Same gestures as the turn menu — one door.
+      if (screen === "story-actions") {
+        const count = STORY_ACTIONS.length;
+        if (key === "ArrowUp") {
+          setSelectedStoryAction((i) => (i + count - 1) % count);
+          return;
+        }
+        if (key === "ArrowDown") {
+          setSelectedStoryAction((i) => (i + 1) % count);
+          return;
+        }
+        if (key === "Enter") {
+          activateStoryAction(selectedStoryAction);
           return;
         }
         if (key === "Escape" || key === "`" || key === "Backspace") {
@@ -984,6 +1068,49 @@ export const GamepadInterface = () => {
         return;
       }
 
+      // SHELF (projection === "bin"): every story as a sibling under the root
+      // bin. Up/Down move across them, A/↵ opens one, ⌫ opens its action menu,
+      // START (or Left) returns to the story you rose from. No k/n curation here
+      // — there is no focused turn on the shelf, so it sits ahead of them.
+      if (projection === "bin") {
+        const count = orderedKeys.length;
+        if (count === 0) {
+          if (key === "Escape" || key === "ArrowLeft") setProjection("loom");
+          return;
+        }
+        if (key === "ArrowUp") {
+          setSelectedShelfIndex((i) => (i + count - 1) % count);
+          return;
+        }
+        if (key === "ArrowDown") {
+          setSelectedShelfIndex((i) => (i + 1) % count);
+          return;
+        }
+        if (key === "Enter" || key === "ArrowRight") {
+          const storyKey = orderedKeys[Math.min(selectedShelfIndex, count - 1)];
+          if (storyKey) {
+            touchStoryActive(storyKey);
+            setCurrentLoomId(storyKey);
+            setProjection("loom");
+          }
+          return;
+        }
+        if (key === "Backspace") {
+          setSelectedStoryAction(0);
+          setScreen("story-actions");
+          return;
+        }
+        if (key === "Escape" || key === "ArrowLeft") {
+          setProjection("loom");
+          return;
+        }
+        if (key === "`") {
+          openDrawer("stories");
+          return;
+        }
+        return;
+      }
+
       // KEEP / ANNOTATE the current turn — the curation gestures. Available in
       // both tree projections (loom + map); they never navigate, so they sit
       // ahead of the projection-specific handling below.
@@ -1051,19 +1178,34 @@ export const GamepadInterface = () => {
         return;
       }
       if (!(await handleStoryNavigation(key))) {
+        // Up past the top of a story rises onto the shelf — the root bin where
+        // stories hang as siblings. The one inert loom gesture, repurposed.
+        if (key === "ArrowUp" && currentDepth === 0) {
+          setSelectedShelfIndex(Math.max(0, orderedKeys.indexOf(currentLoomId)));
+          setProjection("bin");
+          return;
+        }
         triggerBonk(key);
       }
     },
     [
+      activateStoryAction,
       activateTurnAction,
       closeDrawer,
       cursorOnTabs,
+      currentDepth,
       currentLoomId,
       drawerTab,
       expandedModel,
       openNote,
       handleKeepAction,
+      selectedShelfIndex,
+      selectedStoryAction,
       selectedTurnAction,
+      setCurrentLoomId,
+      setProjection,
+      setSelectedShelfIndex,
+      setSelectedStoryAction,
       setSelectedTurnAction,
       handleStoryNavigation,
       handleSubmitModel,
@@ -1387,6 +1529,28 @@ export const GamepadInterface = () => {
               lastMapNodeId={lastMapNodeId}
               currentNodeId={highlightedNode.id}
             />
+          ) : projection === "bin" && screen === null ? (
+            <MenuScreen>
+              <StoryShelf
+                stories={orderedKeys.map((id) => ({
+                  id,
+                  title: storyTitles[id] ?? id,
+                  isCurrent: id === currentLoomId,
+                }))}
+                selected={Math.min(
+                  selectedShelfIndex,
+                  Math.max(0, orderedKeys.length - 1)
+                )}
+                onOpen={(index) => {
+                  const storyKey = orderedKeys[index];
+                  if (storyKey) {
+                    touchStoryActive(storyKey);
+                    setCurrentLoomId(storyKey);
+                    setProjection("loom");
+                  }
+                }}
+              />
+            </MenuScreen>
           ) : screen === "edit" ? (
             <MenuScreen>
               <EditMenu
@@ -1425,6 +1589,15 @@ export const GamepadInterface = () => {
                 selected={selectedTurnAction}
                 onSelect={(index) => void activateTurnAction(index)}
                 ariaLabel="Turn actions"
+              />
+            </MenuScreen>
+          ) : screen === "story-actions" ? (
+            <MenuScreen>
+              <ActionMenu
+                actions={STORY_ACTION_MENU}
+                selected={selectedStoryAction}
+                onSelect={(index) => activateStoryAction(index)}
+                ariaLabel="Story actions"
               />
             </MenuScreen>
           ) : screen === "note" ? (
