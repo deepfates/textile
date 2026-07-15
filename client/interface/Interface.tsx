@@ -31,7 +31,7 @@ import { SettingsMenu } from "./menus/SettingsMenu";
 import { TreeListMenu } from "./menus/TreeListMenu";
 import { ModelsMenu } from "./menus/ModelsMenu";
 import { EditMenu, EDIT_CONTROL_EVENT } from "./menus/EditMenu";
-import { TurnActionsMenu } from "./menus/TurnActionsMenu";
+import { ActionMenu, type MenuAction } from "./menus/ActionMenu";
 import { InstallPrompt } from "./components/InstallPrompt";
 import ModeBar from "./components/ModeBar";
 import { Drawer, DRAWER_TABS } from "./components/Drawer";
@@ -105,6 +105,19 @@ const SETTINGS_ROW_LABELS = [
   "Author Name",
   "Authorship",
 ];
+
+// The focused-turn action set — the "second layer" contents, kept as DATA in a
+// stable order so it drives both the ActionMenu (labels) and the key handler
+// (cursor). Growing textile to act on other object types is another builder
+// like this one; the ActionMenu primitive and the key handling stay put.
+const TURN_ACTIONS = ["keep", "note", "edit"] as const;
+
+function buildTurnActions(node: { kept?: boolean } | undefined): MenuAction[] {
+  return TURN_ACTIONS.map((id) => ({
+    id,
+    label: id === "keep" ? (node?.kept ? "un-keep" : "keep") : id,
+  }));
+}
 
 function useLyncSyncIndicator(): LyncSyncSnapshot {
   const [status, setStatus] = useState(() => getLyncSyncSnapshot());
@@ -514,16 +527,20 @@ export const GamepadInterface = () => {
     [annotateCurrentNode, showImportNotice, setScreen],
   );
 
-  // Activate a row of the per-turn action menu: 0=keep 1=note 2=edit.
+  // Activate a row of the per-turn action menu by its stable action id.
   const activateTurnAction = useCallback(
     async (index: number) => {
-      if (index === 0) {
-        await handleKeepAction();
-        setScreen(null);
-      } else if (index === 1) {
-        setScreen("note");
-      } else {
-        setScreen("edit");
+      switch (TURN_ACTIONS[index]) {
+        case "keep":
+          await handleKeepAction();
+          setScreen(null);
+          break;
+        case "note":
+          setScreen("note");
+          break;
+        case "edit":
+          setScreen("edit");
+          break;
       }
     },
     [handleKeepAction, setScreen],
@@ -872,12 +889,13 @@ export const GamepadInterface = () => {
       // TURN action menu (per-turn: keep / note / edit), opened by B (⌫) in the
       // reading view. D-pad moves, A chooses, START/SELECT/B dismiss.
       if (screen === "turn") {
+        const count = TURN_ACTIONS.length;
         if (key === "ArrowUp") {
-          setSelectedTurnAction((i) => (i + 2) % 3);
+          setSelectedTurnAction((i) => (i + count - 1) % count);
           return;
         }
         if (key === "ArrowDown") {
-          setSelectedTurnAction((i) => (i + 1) % 3);
+          setSelectedTurnAction((i) => (i + 1) % count);
           return;
         }
         if (key === "Enter") {
@@ -1402,10 +1420,11 @@ export const GamepadInterface = () => {
             </MenuScreen>
           ) : screen === "turn" ? (
             <MenuScreen>
-              <TurnActionsMenu
-                node={getCurrentPath()[currentDepth]}
+              <ActionMenu
+                actions={buildTurnActions(getCurrentPath()[currentDepth])}
                 selected={selectedTurnAction}
                 onSelect={(index) => void activateTurnAction(index)}
+                ariaLabel="Turn actions"
               />
             </MenuScreen>
           ) : screen === "note" ? (
