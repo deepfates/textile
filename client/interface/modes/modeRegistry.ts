@@ -3,8 +3,10 @@ import type { DrawerTab, Projection, Screen } from "../types";
 export type ModeId =
   | "loom"
   | "map"
+  | "bin"
   | "edit"
   | "turn"
+  | "story-actions"
   | "note"
   | "drawer-tabs"
   | "drawer-settings"
@@ -45,6 +47,12 @@ export const registeredModes: RegisteredMode[] = [
     title: "TURN",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
     matches: ({ screen }) => screen === "turn",
+  },
+  {
+    id: "story-actions",
+    title: "LOOM ACTIONS",
+    hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
+    matches: ({ screen }) => screen === "story-actions",
   },
   {
     id: "model-editor",
@@ -92,6 +100,12 @@ export const registeredModes: RegisteredMode[] = [
     hint: "↵: GENERATE • ⌫: ACTIONS • START: MAP • SELECT: CONFIG",
     matches: ({ screen, projection }) =>
       screen === null && projection === "loom",
+  },
+  {
+    id: "bin",
+    title: "LOOMS",
+    hint: "↕: MOVE • ↵: OPEN • ⌫: ACTIONS • START: BACK",
+    matches: ({ screen, projection }) => screen === null && projection === "bin",
   },
 ];
 
