@@ -7,6 +7,7 @@ export type ModeId =
   | "edit"
   | "turn"
   | "story-actions"
+  | "floor-actions"
   | "confirm-delete"
   | "note"
   | "drawer-tabs"
@@ -54,6 +55,12 @@ export const registeredModes: RegisteredMode[] = [
     title: "LOOM ACTIONS",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
     matches: ({ screen }) => screen === "story-actions",
+  },
+  {
+    id: "floor-actions",
+    title: "FLOOR",
+    hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
+    matches: ({ screen }) => screen === "floor-actions",
   },
   {
     id: "confirm-delete",
@@ -104,7 +111,7 @@ export const registeredModes: RegisteredMode[] = [
   {
     id: "loom",
     title: "LOOM",
-    hint: "↵: GENERATE • ⌫: ACTIONS • START: MAP • SELECT: CONFIG",
+    hint: "↵: GENERATE • ⌫: ACTIONS • ↑: LOOMS • START: MAP • SELECT: CONFIG",
     matches: ({ screen, projection }) =>
       screen === null && projection === "loom",
   },

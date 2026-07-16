@@ -167,6 +167,7 @@ export type Screen =
   | "turn"
   | "note"
   | "story-actions"
+  | "floor-actions"
   | "confirm-delete"
   | null;
 

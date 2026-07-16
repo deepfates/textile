@@ -123,6 +123,11 @@ const STORY_ACTION_MENU: MenuAction[] = STORY_ACTIONS.map((id) => ({
   label: id,
 }));
 
+// The FLOOR's own action set (SELECT on the floor) — verbs on the archive
+// itself, distinct from a loom's verbs (⌫). "sort" carries the live order so
+// the label doubles as the current state.
+const FLOOR_ACTIONS = ["new", "import", "sort", "share-index"] as const;
+
 function buildTurnActions(node: { kept?: boolean } | undefined): MenuAction[] {
   return TURN_ACTIONS.map((id) => ({
     id,
@@ -249,6 +254,8 @@ export const GamepadInterface = () => {
   const [selectedStoryAction, setSelectedStoryAction] = useState(0);
   // Cursor in the delete confirmation (screen === "confirm-delete"): 0=delete 1=keep.
   const [selectedConfirm, setSelectedConfirm] = useState(0);
+  // Cursor in the floor's own action menu (screen === "floor-actions").
+  const [selectedFloorAction, setSelectedFloorAction] = useState(0);
   // When cursor is on the drawer's tab strip, Left/Right cycle tabs
   // and ArrowDown drops into the rows beneath.  ArrowUp from the
   // first row comes back up here.
@@ -950,6 +957,43 @@ export const GamepadInterface = () => {
     ]
   );
 
+  // Run one action from the FLOOR's menu (SELECT on the floor) — verbs on the
+  // archive itself. All reuse the drawer's existing handlers, so the floor is a
+  // complete home without the drawer's scattered 2-D action grid.
+  const activateFloorAction = useCallback(
+    (index: number) => {
+      switch (FLOOR_ACTIONS[index]) {
+        case "new":
+          // Create + drop into the fresh loom, ready to write.
+          void handleNewTree();
+          setScreen(null);
+          setProjection("loom");
+          break;
+        case "import":
+          openConversationFilePicker();
+          setScreen(null);
+          break;
+        case "sort":
+          // Re-sort in place; keep the menu open so you can cycle orders and
+          // watch the row reshuffle.
+          cycleStorySort(1);
+          break;
+        case "share-index":
+          void handleShareIndex();
+          setScreen(null);
+          break;
+      }
+    },
+    [
+      handleNewTree,
+      openConversationFilePicker,
+      cycleStorySort,
+      handleShareIndex,
+      setScreen,
+      setProjection,
+    ]
+  );
+
   const handleControlAction = useCallback(
     async (key: string) => {
       // EDIT overlay — EditMenu owns keyboard via its own window listener.
@@ -1021,6 +1065,28 @@ export const GamepadInterface = () => {
             if (storyKey) void performDeleteStory(storyKey);
           }
           setScreen(null);
+          return;
+        }
+        if (key === "Escape" || key === "`" || key === "Backspace") {
+          setScreen(null);
+          return;
+        }
+        return;
+      }
+
+      // FLOOR action menu (SELECT on the floor): new / import / sort / share.
+      if (screen === "floor-actions") {
+        const count = FLOOR_ACTIONS.length;
+        if (key === "ArrowUp") {
+          setSelectedFloorAction((i) => (i + count - 1) % count);
+          return;
+        }
+        if (key === "ArrowDown") {
+          setSelectedFloorAction((i) => (i + 1) % count);
+          return;
+        }
+        if (key === "Enter") {
+          activateFloorAction(selectedFloorAction);
           return;
         }
         if (key === "Escape" || key === "`" || key === "Backspace") {
@@ -1157,7 +1223,9 @@ export const GamepadInterface = () => {
           return;
         }
         if (key === "`") {
-          openDrawer("stories");
+          // SELECT acts on the FLOOR itself: new / import / sort / share-index.
+          setSelectedFloorAction(0);
+          setScreen("floor-actions");
           return;
         }
         // Up — nothing above the floor.
@@ -1260,14 +1328,17 @@ export const GamepadInterface = () => {
       expandedModel,
       openNote,
       handleKeepAction,
+      activateFloorAction,
       performDeleteStory,
       selectedConfirm,
+      selectedFloorAction,
       selectedShelfIndex,
       selectedStoryAction,
       selectedTurnAction,
       setCurrentLoomId,
       setProjection,
       setSelectedConfirm,
+      setSelectedFloorAction,
       setSelectedShelfIndex,
       setSelectedStoryAction,
       setSelectedTurnAction,
@@ -1692,6 +1763,20 @@ export const GamepadInterface = () => {
                   setScreen(null);
                 }}
                 ariaLabel="Confirm delete"
+              />
+            </MenuScreen>
+          ) : screen === "floor-actions" ? (
+            <MenuScreen>
+              <ActionMenu
+                actions={[
+                  { id: "new", label: "new loom" },
+                  { id: "import", label: "import conversation" },
+                  { id: "sort", label: `sort: ${storySort}` },
+                  { id: "share-index", label: "share index" },
+                ]}
+                selected={selectedFloorAction}
+                onSelect={(index) => activateFloorAction(index)}
+                ariaLabel="Floor actions"
               />
             </MenuScreen>
           ) : screen === "note" ? (
