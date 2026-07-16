@@ -92,7 +92,10 @@ export const registeredModes: RegisteredMode[] = [
   {
     id: "loom",
     title: "LOOM",
-    hint: "↵: GENERATE • ⌫: ACTIONS • ↑: LOOMS • START: MAP • SELECT: CONFIG",
+    // No "↑: LOOMS" here: it overflowed the bar (hiding SELECT: CONFIG) and is
+    // only true at the root — ↑ climbs the tree at depth. Rising to the floor
+    // wants a root-contextual hint instead (tracked separately).
+    hint: "↵: GENERATE • ⌫: ACTIONS • START: MAP • SELECT: CONFIG",
     matches: ({ screen, projection }) =>
       screen === null && projection === "loom",
   },
