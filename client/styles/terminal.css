@@ -842,6 +842,88 @@ html, body {
   --border-color: var(--theme-border);
 }
 
+/* --- The forest floor: stories as sibling roots, the map's top zoom level.
+   A dial (selected root pinned to center, the row slides beneath it) over the
+   selected story's blooming silhouette. --- */
+.story-forest {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.story-forest-floor {
+  position: relative;
+  overflow: hidden;
+  height: 2.5rem;
+  flex: none;
+  border-bottom: 1px solid var(--theme-border);
+}
+
+/* Centre marker — the fixed focal point the fingerprint always returns to. */
+.story-forest-floor::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px solid var(--theme-focused-foreground);
+  opacity: 0.5;
+}
+
+.story-forest-row {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  transition: transform 180ms ease;
+}
+
+.story-forest-root {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--theme-muted);
+  cursor: pointer;
+  font: inherit;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75ch;
+  padding: 0 1ch;
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 0.45;
+}
+
+.story-forest-root-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-forest-root.selected {
+  color: var(--theme-text);
+  opacity: 1;
+}
+
+.story-forest-root-tag {
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.story-forest-bloom {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 .minimap-viewport {
   flex: 1;
   overflow: auto;

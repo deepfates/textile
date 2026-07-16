@@ -104,7 +104,7 @@ export const registeredModes: RegisteredMode[] = [
   {
     id: "bin",
     title: "LOOMS",
-    hint: "↕: MOVE • ↵: OPEN • ⌫: ACTIONS • START: BACK",
+    hint: "◄►: DIAL • ↓: FLY • ↵: READ • ⌫: ACTIONS • START: BACK",
     matches: ({ screen, projection }) => screen === null && projection === "bin",
   },
 ];

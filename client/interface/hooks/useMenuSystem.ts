@@ -16,7 +16,13 @@ import type { LengthMode } from "../../../shared/lengthPresets";
  * independent state variables and the per-menu cursor indices.
  */
 
-export type Screen = null | "drawer" | "edit" | "turn" | "note";
+export type Screen =
+  | null
+  | "drawer"
+  | "edit"
+  | "turn"
+  | "note"
+  | "story-actions";
 
 export interface MenuParams {
   temperature: number;

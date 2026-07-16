@@ -17,7 +17,7 @@ import { MenuScreen } from "./components/MenuScreen";
 import { NavigationDots } from "./components/NavigationDots";
 import { StoryText } from "./components/StoryText";
 import { StoryMinimap } from "./components/StoryMinimap";
-import { StoryShelf } from "./components/StoryShelf";
+import { StoryForest } from "./components/StoryForest";
 import { useTheme, THEME_PRESETS } from "./components/ThemeToggle";
 import type {
   ThemeClass,
@@ -1075,19 +1075,34 @@ export const GamepadInterface = () => {
       if (projection === "bin") {
         const count = orderedKeys.length;
         if (count === 0) {
-          if (key === "Escape" || key === "ArrowLeft") setProjection("loom");
+          if (key === "Escape") setProjection("loom");
           return;
         }
-        if (key === "ArrowUp") {
+        const focused = () => orderedKeys[Math.min(selectedShelfIndex, count - 1)];
+        // Left/right DIAL the row of sibling roots — the selected root stays
+        // pinned to the center, the row slides beneath it.
+        if (key === "ArrowLeft") {
           setSelectedShelfIndex((i) => (i + count - 1) % count);
           return;
         }
-        if (key === "ArrowDown") {
+        if (key === "ArrowRight") {
           setSelectedShelfIndex((i) => (i + 1) % count);
           return;
         }
-        if (key === "Enter" || key === "ArrowRight") {
-          const storyKey = orderedKeys[Math.min(selectedShelfIndex, count - 1)];
+        // Down descends into the tree blooming beneath the selected root — stay
+        // in the map, now flying THIS story.
+        if (key === "ArrowDown") {
+          const storyKey = focused();
+          if (storyKey) {
+            touchStoryActive(storyKey);
+            setCurrentLoomId(storyKey);
+            setProjection("map");
+          }
+          return;
+        }
+        // A reads it — drop into the loom.
+        if (key === "Enter") {
+          const storyKey = focused();
           if (storyKey) {
             touchStoryActive(storyKey);
             setCurrentLoomId(storyKey);
@@ -1100,7 +1115,7 @@ export const GamepadInterface = () => {
           setScreen("story-actions");
           return;
         }
-        if (key === "Escape" || key === "ArrowLeft") {
+        if (key === "Escape") {
           setProjection("loom");
           return;
         }
@@ -1108,6 +1123,8 @@ export const GamepadInterface = () => {
           openDrawer("stories");
           return;
         }
+        // Up — nothing above the floor.
+        triggerBonk(key);
         return;
       }
 
@@ -1158,6 +1175,13 @@ export const GamepadInterface = () => {
           return;
         }
         if (!(await handleStoryNavigation(key))) {
+          // Up past the root rises to the forest floor — the map's top zoom
+          // level, where this tree becomes one root among its siblings.
+          if (key === "ArrowUp" && currentDepth === 0) {
+            setSelectedShelfIndex(Math.max(0, orderedKeys.indexOf(currentLoomId)));
+            setProjection("bin");
+            return;
+          }
           triggerBonk(key);
         }
         return;
@@ -1530,27 +1554,27 @@ export const GamepadInterface = () => {
               currentNodeId={highlightedNode.id}
             />
           ) : projection === "bin" && screen === null ? (
-            <MenuScreen>
-              <StoryShelf
-                stories={orderedKeys.map((id) => ({
-                  id,
-                  title: storyTitles[id] ?? id,
-                  isCurrent: id === currentLoomId,
-                }))}
-                selected={Math.min(
-                  selectedShelfIndex,
-                  Math.max(0, orderedKeys.length - 1)
-                )}
-                onOpen={(index) => {
-                  const storyKey = orderedKeys[index];
-                  if (storyKey) {
-                    touchStoryActive(storyKey);
-                    setCurrentLoomId(storyKey);
-                    setProjection("loom");
-                  }
-                }}
-              />
-            </MenuScreen>
+            <StoryForest
+              // orderedKeys is derived from `trees`, so every id has a tree.
+              stories={orderedKeys.map((id) => ({
+                id,
+                title: storyTitles[id] ?? id,
+                tree: trees[id]!,
+                isCurrent: id === currentLoomId,
+              }))}
+              selected={selectedShelfIndex}
+              onFocus={(index) => setSelectedShelfIndex(index)}
+              onDescend={(index) => {
+                const storyKey = orderedKeys[index];
+                if (storyKey) {
+                  touchStoryActive(storyKey);
+                  setCurrentLoomId(storyKey);
+                  // Descend into the tree that's blooming beneath the root —
+                  // stay in the map, now flying THIS story.
+                  setProjection("map");
+                }
+              }}
+            />
           ) : screen === "edit" ? (
             <MenuScreen>
               <EditMenu

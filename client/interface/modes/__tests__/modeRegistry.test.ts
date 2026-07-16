@@ -27,7 +27,7 @@ describe("modeRegistry", () => {
 
     expect(mode.id).toBe("bin");
     expect(mode.title).toBe("LOOMS");
-    expect(mode.hint).toContain("↵: OPEN");
+    expect(mode.hint).toContain("◄►: DIAL");
     expect(mode.hint).toContain("⌫: ACTIONS");
   });
 
