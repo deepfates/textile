@@ -31,29 +31,17 @@ describe("modeRegistry", () => {
     expect(mode.hint).toContain("⌫: ACTIONS");
   });
 
-  it("shows the per-story action menu as its own mode", () => {
+  it("routes every action-overlay (turn / story / floor / delete-confirm) through one 'menu' mode", () => {
+    // Title + hint now come from the active Menu descriptor at runtime, so the
+    // registry only needs to identify the single unified door.
     const mode = getRegisteredMode({
-      screen: "story-actions",
-      projection: "bin",
+      screen: "menu",
+      projection: "loom",
       drawerTab: "stories",
       cursorOnTabs: false,
       editingModel: false,
     });
 
-    expect(mode.id).toBe("story-actions");
-  });
-
-  it("has an in-idiom delete confirmation mode (not a native dialog)", () => {
-    const mode = getRegisteredMode({
-      screen: "confirm-delete",
-      projection: "bin",
-      drawerTab: "stories",
-      cursorOnTabs: false,
-      editingModel: false,
-    });
-
-    expect(mode.id).toBe("confirm-delete");
-    expect(mode.title).toBe("DELETE LOOM?");
-    expect(mode.hint).toContain("START: CANCEL");
+    expect(mode.id).toBe("menu");
   });
 });

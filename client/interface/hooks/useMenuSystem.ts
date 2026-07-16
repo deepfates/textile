@@ -20,11 +20,11 @@ export type Screen =
   | null
   | "drawer"
   | "edit"
-  | "turn"
-  | "note"
-  | "story-actions"
-  | "floor-actions"
-  | "confirm-delete";
+  // One parameterized action-overlay for every "act on the focused thing" menu
+  // (turn / story / floor / delete-confirm). Its contents come from a Menu
+  // descriptor held in Interface — see openMenu().
+  | "menu"
+  | "note";
 
 export interface MenuParams {
   temperature: number;
@@ -41,8 +41,6 @@ export function useMenuSystem(defaultParams: MenuParams) {
     null,
   );
 
-  // Cursor within the per-turn action menu (screen === "turn"): 0=keep 1=note 2=edit.
-  const [selectedTurnAction, setSelectedTurnAction] = useState(0);
   const [selectedParam, setSelectedParam] = useState(0);
   const [selectedTreeIndex, setSelectedTreeIndex] = useState(0);
   const [selectedTreeColumn, setSelectedTreeColumn] = useState(0);
@@ -59,8 +57,6 @@ export function useMenuSystem(defaultParams: MenuParams) {
   return {
     screen,
     setScreen,
-    selectedTurnAction,
-    setSelectedTurnAction,
     drawerTab,
     setDrawerTab,
     expandedModel,
