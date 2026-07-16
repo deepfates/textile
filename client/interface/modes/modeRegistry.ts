@@ -5,10 +5,7 @@ export type ModeId =
   | "map"
   | "bin"
   | "edit"
-  | "turn"
-  | "story-actions"
-  | "floor-actions"
-  | "confirm-delete"
+  | "menu"
   | "note"
   | "drawer-tabs"
   | "drawer-settings"
@@ -45,28 +42,12 @@ export const registeredModes: RegisteredMode[] = [
     matches: ({ screen }) => screen === "note",
   },
   {
-    id: "turn",
-    title: "TURN",
+    // One entry for every action-overlay; the real title/hint come from the
+    // active Menu descriptor (Interface overrides these per-menu).
+    id: "menu",
+    title: "MENU",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
-    matches: ({ screen }) => screen === "turn",
-  },
-  {
-    id: "story-actions",
-    title: "LOOM ACTIONS",
-    hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
-    matches: ({ screen }) => screen === "story-actions",
-  },
-  {
-    id: "floor-actions",
-    title: "FLOOR",
-    hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
-    matches: ({ screen }) => screen === "floor-actions",
-  },
-  {
-    id: "confirm-delete",
-    title: "DELETE LOOM?",
-    hint: "↕: MOVE • ↵: CHOOSE • START: CANCEL",
-    matches: ({ screen }) => screen === "confirm-delete",
+    matches: ({ screen }) => screen === "menu",
   },
   {
     id: "model-editor",

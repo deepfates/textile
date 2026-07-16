@@ -128,6 +128,39 @@ const STORY_ACTION_MENU: MenuAction[] = STORY_ACTIONS.map((id) => ({
 // the label doubles as the current state.
 const FLOOR_ACTIONS = ["new", "import", "sort", "share-index"] as const;
 
+function floorMenuActions(sort: StorySortOption): MenuAction[] {
+  return FLOOR_ACTIONS.map((id) => ({
+    id,
+    label:
+      id === "new"
+        ? "new loom"
+        : id === "import"
+          ? "import conversation"
+          : id === "sort"
+            ? `sort: ${sort}`
+            : "share index",
+  }));
+}
+
+/**
+ * One parameterized action-overlay — "the one door to act on whatever you're
+ * focused on." Every menu (turn / story / floor / delete-confirm) is just a
+ * descriptor: the ActionMenu component and the d-pad handling stay put, only
+ * the rows + what Enter does change. Actions are captured when the menu opens.
+ */
+interface Menu {
+  /** Mode-bar title (e.g. "TURN", "LOOM ACTIONS", "FLOOR", 'DELETE "…"?'). */
+  title: string;
+  /** Mode-bar hint; defaults to the standard move/choose/close line. */
+  hint?: string;
+  actions: MenuAction[];
+  onActivate: (index: number) => void;
+  /** Starting cursor row (e.g. delete-confirm starts on "keep"). */
+  initialCursor?: number;
+}
+
+const DEFAULT_MENU_HINT = "↕: MOVE • ↵: CHOOSE • START: CLOSE";
+
 function buildTurnActions(node: { kept?: boolean } | undefined): MenuAction[] {
   return TURN_ACTIONS.map((id) => ({
     id,
@@ -224,8 +257,6 @@ export const GamepadInterface = () => {
   const {
     screen,
     setScreen,
-    selectedTurnAction,
-    setSelectedTurnAction,
     drawerTab,
     setDrawerTab,
     expandedModel,
@@ -251,11 +282,18 @@ export const GamepadInterface = () => {
   // Cursor across stories on the "shelf" (projection === "bin"), and the cursor
   // in the per-story action menu (screen === "story-actions").
   const [selectedShelfIndex, setSelectedShelfIndex] = useState(0);
-  const [selectedStoryAction, setSelectedStoryAction] = useState(0);
-  // Cursor in the delete confirmation (screen === "confirm-delete"): 0=delete 1=keep.
-  const [selectedConfirm, setSelectedConfirm] = useState(0);
-  // Cursor in the floor's own action menu (screen === "floor-actions").
-  const [selectedFloorAction, setSelectedFloorAction] = useState(0);
+  // The active action-overlay (screen === "menu") and its cursor row. One door
+  // for turn / story / floor / delete-confirm — opened via openMenu().
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menuCursor, setMenuCursor] = useState(0);
+  const openMenu = useCallback(
+    (m: Menu) => {
+      setMenuCursor(m.initialCursor ?? 0);
+      setMenu(m);
+      setScreen("menu");
+    },
+    [setScreen],
+  );
   // When cursor is on the drawer's tab strip, Left/Right cycle tabs
   // and ArrowDown drops into the rows beneath.  ArrowUp from the
   // first row comes back up here.
@@ -936,10 +974,26 @@ export const GamepadInterface = () => {
         case "delete":
           // Never delete the last story — mirror the drawer's guard. Open an
           // in-idiom confirmation (NOT a native dialog); default the cursor to
-          // "keep" so a stray second press can't delete.
+          // "keep" so a stray press can't delete.
           if (orderedKeys.length > 1) {
-            setSelectedConfirm(1);
-            setScreen("confirm-delete");
+            openMenu({
+              title: "DELETE LOOM?",
+              hint: "↕: MOVE • ↵: CHOOSE • START: CANCEL",
+              actions: [
+                {
+                  id: "delete",
+                  label: `delete "${storyTitles[storyKey] ?? storyKey}"`,
+                },
+                { id: "keep", label: "keep it" },
+              ],
+              initialCursor: 1,
+              onActivate: (i) => {
+                if (i === 0 && orderedKeys.length > 1) {
+                  void performDeleteStory(storyKey);
+                }
+                setScreen(null);
+              },
+            });
           } else {
             setScreen(null);
           }
@@ -951,6 +1005,9 @@ export const GamepadInterface = () => {
       selectedShelfIndex,
       handleShareStory,
       handleExportTree,
+      openMenu,
+      performDeleteStory,
+      storyTitles,
       setCurrentLoomId,
       setScreen,
       setProjection,
@@ -974,9 +1031,10 @@ export const GamepadInterface = () => {
           setScreen(null);
           break;
         case "sort":
-          // Re-sort in place; keep the menu open so you can cycle orders and
-          // watch the row reshuffle.
+          // Cycle the order and close, so the reshuffled floor is immediately
+          // visible (staying open would just hide the row you're reordering).
           cycleStorySort(1);
+          setScreen(null);
           break;
         case "share-index":
           void handleShareIndex();
@@ -1006,87 +1064,21 @@ export const GamepadInterface = () => {
         return;
       }
 
-      // TURN action menu (per-turn: keep / note / edit), opened by B (⌫) in the
-      // reading view. D-pad moves, A chooses, START/SELECT/B dismiss.
-      if (screen === "turn") {
-        const count = TURN_ACTIONS.length;
+      // ACTION MENU — the one door (turn / story / floor / delete-confirm). The
+      // active Menu descriptor supplies the rows and what Enter does; the d-pad
+      // handling is identical for every menu, so it lives here once.
+      if (screen === "menu" && menu) {
+        const count = menu.actions.length;
         if (key === "ArrowUp") {
-          setSelectedTurnAction((i) => (i + count - 1) % count);
+          setMenuCursor((i) => (i + count - 1) % count);
           return;
         }
         if (key === "ArrowDown") {
-          setSelectedTurnAction((i) => (i + 1) % count);
+          setMenuCursor((i) => (i + 1) % count);
           return;
         }
         if (key === "Enter") {
-          void activateTurnAction(selectedTurnAction);
-          return;
-        }
-        if (key === "Escape" || key === "`" || key === "Backspace") {
-          setScreen(null);
-          return;
-        }
-        return;
-      }
-
-      // STORY action menu (per-story: open / share / export / delete), opened by
-      // B (⌫) on the shelf. Same gestures as the turn menu — one door.
-      if (screen === "story-actions") {
-        const count = STORY_ACTIONS.length;
-        if (key === "ArrowUp") {
-          setSelectedStoryAction((i) => (i + count - 1) % count);
-          return;
-        }
-        if (key === "ArrowDown") {
-          setSelectedStoryAction((i) => (i + 1) % count);
-          return;
-        }
-        if (key === "Enter") {
-          activateStoryAction(selectedStoryAction);
-          return;
-        }
-        if (key === "Escape" || key === "`" || key === "Backspace") {
-          setScreen(null);
-          return;
-        }
-        return;
-      }
-
-      // DELETE confirmation (in-idiom, replaces the native window.confirm).
-      if (screen === "confirm-delete") {
-        if (key === "ArrowUp" || key === "ArrowDown") {
-          setSelectedConfirm((i) => (i === 0 ? 1 : 0));
-          return;
-        }
-        if (key === "Enter") {
-          if (selectedConfirm === 0 && orderedKeys.length > 1) {
-            const storyKey =
-              orderedKeys[Math.min(selectedShelfIndex, orderedKeys.length - 1)];
-            if (storyKey) void performDeleteStory(storyKey);
-          }
-          setScreen(null);
-          return;
-        }
-        if (key === "Escape" || key === "`" || key === "Backspace") {
-          setScreen(null);
-          return;
-        }
-        return;
-      }
-
-      // FLOOR action menu (SELECT on the floor): new / import / sort / share.
-      if (screen === "floor-actions") {
-        const count = FLOOR_ACTIONS.length;
-        if (key === "ArrowUp") {
-          setSelectedFloorAction((i) => (i + count - 1) % count);
-          return;
-        }
-        if (key === "ArrowDown") {
-          setSelectedFloorAction((i) => (i + 1) % count);
-          return;
-        }
-        if (key === "Enter") {
-          activateFloorAction(selectedFloorAction);
+          menu.onActivate(menuCursor);
           return;
         }
         if (key === "Escape" || key === "`" || key === "Backspace") {
@@ -1214,8 +1206,12 @@ export const GamepadInterface = () => {
           return;
         }
         if (key === "Backspace") {
-          setSelectedStoryAction(0);
-          setScreen("story-actions");
+          // ⌫ acts on the focused LOOM: open / share / export / delete.
+          openMenu({
+            title: "LOOM ACTIONS",
+            actions: STORY_ACTION_MENU,
+            onActivate: activateStoryAction,
+          });
           return;
         }
         if (key === "Escape") {
@@ -1224,8 +1220,11 @@ export const GamepadInterface = () => {
         }
         if (key === "`") {
           // SELECT acts on the FLOOR itself: new / import / sort / share-index.
-          setSelectedFloorAction(0);
-          setScreen("floor-actions");
+          openMenu({
+            title: "FLOOR",
+            actions: floorMenuActions(storySort),
+            onActivate: activateFloorAction,
+          });
           return;
         }
         // Up — nothing above the floor.
@@ -1302,8 +1301,12 @@ export const GamepadInterface = () => {
         return;
       }
       if (key === "Backspace") {
-        setSelectedTurnAction(0);
-        setScreen("turn");
+        // ⌫ acts on the focused TURN: keep / note / edit.
+        openMenu({
+          title: "TURN",
+          actions: buildTurnActions(getCurrentPath()[currentDepth]),
+          onActivate: (i) => void activateTurnAction(i),
+        });
         return;
       }
       if (!(await handleStoryNavigation(key))) {
@@ -1329,19 +1332,16 @@ export const GamepadInterface = () => {
       openNote,
       handleKeepAction,
       activateFloorAction,
-      performDeleteStory,
-      selectedConfirm,
-      selectedFloorAction,
+      menu,
+      menuCursor,
+      openMenu,
       selectedShelfIndex,
-      selectedStoryAction,
-      selectedTurnAction,
+      storySort,
       setCurrentLoomId,
+      setMenuCursor,
       setProjection,
-      setSelectedConfirm,
-      setSelectedFloorAction,
       setSelectedShelfIndex,
-      setSelectedStoryAction,
-      setSelectedTurnAction,
+      getCurrentPath,
       handleStoryNavigation,
       handleSubmitModel,
       highlightedNode,
@@ -1491,7 +1491,14 @@ export const GamepadInterface = () => {
           aria-label="Story Display"
         >
           {/* Unified top mode bar */}
-          <ModeBar title={currentMode.title} hint={currentMode.hint} />
+          <ModeBar
+            title={screen === "menu" && menu ? menu.title : currentMode.title}
+            hint={
+              screen === "menu" && menu
+                ? (menu.hint ?? DEFAULT_MENU_HINT)
+                : currentMode.hint
+            }
+          />
           {screen === "drawer" ? (
             <Drawer
               tab={drawerTab}
@@ -1717,66 +1724,13 @@ export const GamepadInterface = () => {
                 onCancel={() => setScreen(null)}
               />
             </MenuScreen>
-          ) : screen === "turn" ? (
+          ) : screen === "menu" && menu ? (
             <MenuScreen>
               <ActionMenu
-                actions={buildTurnActions(getCurrentPath()[currentDepth])}
-                selected={selectedTurnAction}
-                onSelect={(index) => void activateTurnAction(index)}
-                ariaLabel="Turn actions"
-              />
-            </MenuScreen>
-          ) : screen === "story-actions" ? (
-            <MenuScreen>
-              <ActionMenu
-                actions={STORY_ACTION_MENU}
-                selected={selectedStoryAction}
-                onSelect={(index) => activateStoryAction(index)}
-                ariaLabel="Story actions"
-              />
-            </MenuScreen>
-          ) : screen === "confirm-delete" ? (
-            <MenuScreen>
-              <ActionMenu
-                actions={[
-                  {
-                    id: "delete",
-                    label: `delete "${
-                      storyTitles[
-                        orderedKeys[
-                          Math.min(selectedShelfIndex, orderedKeys.length - 1)
-                        ]
-                      ] ?? "this loom"
-                    }"`,
-                  },
-                  { id: "keep", label: "keep it" },
-                ]}
-                selected={selectedConfirm}
-                onSelect={(index) => {
-                  if (index === 0 && orderedKeys.length > 1) {
-                    const storyKey =
-                      orderedKeys[
-                        Math.min(selectedShelfIndex, orderedKeys.length - 1)
-                      ];
-                    if (storyKey) void performDeleteStory(storyKey);
-                  }
-                  setScreen(null);
-                }}
-                ariaLabel="Confirm delete"
-              />
-            </MenuScreen>
-          ) : screen === "floor-actions" ? (
-            <MenuScreen>
-              <ActionMenu
-                actions={[
-                  { id: "new", label: "new loom" },
-                  { id: "import", label: "import conversation" },
-                  { id: "sort", label: `sort: ${storySort}` },
-                  { id: "share-index", label: "share index" },
-                ]}
-                selected={selectedFloorAction}
-                onSelect={(index) => activateFloorAction(index)}
-                ariaLabel="Floor actions"
+                actions={menu.actions}
+                selected={menuCursor}
+                onSelect={(index) => menu.onActivate(index)}
+                ariaLabel={menu.title}
               />
             </MenuScreen>
           ) : screen === "note" ? (
@@ -1866,7 +1820,7 @@ export const GamepadInterface = () => {
                   </span>
                 );
               }
-              if (screen === "edit" || screen === "turn" || screen === "note") {
+              if (screen === "edit" || screen === "menu" || screen === "note") {
                 return isOffline ? (
                   <span className="text-theme-focused text-sm">⚡ Offline</span>
                 ) : null;
