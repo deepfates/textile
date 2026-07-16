@@ -167,6 +167,7 @@ export type Screen =
   | "turn"
   | "note"
   | "story-actions"
+  | "confirm-delete"
   | null;
 
 /** Which projection of the tree is visible when no overlay is open. */
