@@ -42,4 +42,18 @@ describe("modeRegistry", () => {
 
     expect(mode.id).toBe("story-actions");
   });
+
+  it("has an in-idiom delete confirmation mode (not a native dialog)", () => {
+    const mode = getRegisteredMode({
+      screen: "confirm-delete",
+      projection: "bin",
+      drawerTab: "stories",
+      cursorOnTabs: false,
+      editingModel: false,
+    });
+
+    expect(mode.id).toBe("confirm-delete");
+    expect(mode.title).toBe("DELETE LOOM?");
+    expect(mode.hint).toContain("START: CANCEL");
+  });
 });

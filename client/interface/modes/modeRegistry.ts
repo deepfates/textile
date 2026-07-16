@@ -7,6 +7,7 @@ export type ModeId =
   | "edit"
   | "turn"
   | "story-actions"
+  | "confirm-delete"
   | "note"
   | "drawer-tabs"
   | "drawer-settings"
@@ -53,6 +54,12 @@ export const registeredModes: RegisteredMode[] = [
     title: "LOOM ACTIONS",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
     matches: ({ screen }) => screen === "story-actions",
+  },
+  {
+    id: "confirm-delete",
+    title: "DELETE LOOM?",
+    hint: "↕: MOVE • ↵: CHOOSE • START: CANCEL",
+    matches: ({ screen }) => screen === "confirm-delete",
   },
   {
     id: "model-editor",

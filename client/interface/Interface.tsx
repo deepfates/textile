@@ -247,6 +247,8 @@ export const GamepadInterface = () => {
   // in the per-story action menu (screen === "story-actions").
   const [selectedShelfIndex, setSelectedShelfIndex] = useState(0);
   const [selectedStoryAction, setSelectedStoryAction] = useState(0);
+  // Cursor in the delete confirmation (screen === "confirm-delete"): 0=delete 1=keep.
+  const [selectedConfirm, setSelectedConfirm] = useState(0);
   // When cursor is on the drawer's tab strip, Left/Right cycle tabs
   // and ArrowDown drops into the rows beneath.  ArrowUp from the
   // first row comes back up here.
@@ -444,31 +446,40 @@ export const GamepadInterface = () => {
     return newKey;
   }, [createStory, closeDrawer]);
 
-  const handleDeleteTree = useCallback(
+  // The actual deletion — no confirmation. Callers own the confirm UX (the
+  // drawer wraps it in window.confirm; the forest uses an in-idiom overlay).
+  const performDeleteStory = useCallback(
     async (key: string) => {
-      if (window.confirm(`Are you sure you want to delete "${key}"?`)) {
-        await deleteStory(key);
-        {
-          const meta = getStoryMeta();
-          if (meta[key]) {
-            delete meta[key];
-            setStoryMeta(meta);
-          }
+      await deleteStory(key);
+      {
+        const meta = getStoryMeta();
+        if (meta[key]) {
+          delete meta[key];
+          setStoryMeta(meta);
         }
+      }
 
-        // If we deleted the current tree, switch to another one
-        if (key === currentLoomId) {
-          const remaining = orderKeysReverseChronological(trees).filter(
-            (k) => k !== key
-          );
-          if (remaining.length > 0) {
-            setCurrentLoomId(remaining[0]);
-            touchStoryActive(remaining[0]);
-          }
+      // If we deleted the current tree, switch to another one
+      if (key === currentLoomId) {
+        const remaining = orderKeysReverseChronological(trees).filter(
+          (k) => k !== key
+        );
+        if (remaining.length > 0) {
+          setCurrentLoomId(remaining[0]);
+          touchStoryActive(remaining[0]);
         }
       }
     },
     [currentLoomId, deleteStory, trees, setCurrentLoomId]
+  );
+
+  const handleDeleteTree = useCallback(
+    async (key: string) => {
+      if (window.confirm(`Are you sure you want to delete "${key}"?`)) {
+        await performDeleteStory(key);
+      }
+    },
+    [performDeleteStory]
   );
 
   const handleExportTree = useCallback(
@@ -916,10 +927,15 @@ export const GamepadInterface = () => {
           setScreen(null);
           break;
         case "delete":
-          // Never delete the last story — mirror the drawer's guard. Stay on
-          // the shelf afterwards (screen closes back to projection === "bin").
-          if (orderedKeys.length > 1) handleDeleteTree(storyKey);
-          setScreen(null);
+          // Never delete the last story — mirror the drawer's guard. Open an
+          // in-idiom confirmation (NOT a native dialog); default the cursor to
+          // "keep" so a stray second press can't delete.
+          if (orderedKeys.length > 1) {
+            setSelectedConfirm(1);
+            setScreen("confirm-delete");
+          } else {
+            setScreen(null);
+          }
           break;
       }
     },
@@ -928,7 +944,6 @@ export const GamepadInterface = () => {
       selectedShelfIndex,
       handleShareStory,
       handleExportTree,
-      handleDeleteTree,
       setCurrentLoomId,
       setScreen,
       setProjection,
@@ -984,6 +999,28 @@ export const GamepadInterface = () => {
         }
         if (key === "Enter") {
           activateStoryAction(selectedStoryAction);
+          return;
+        }
+        if (key === "Escape" || key === "`" || key === "Backspace") {
+          setScreen(null);
+          return;
+        }
+        return;
+      }
+
+      // DELETE confirmation (in-idiom, replaces the native window.confirm).
+      if (screen === "confirm-delete") {
+        if (key === "ArrowUp" || key === "ArrowDown") {
+          setSelectedConfirm((i) => (i === 0 ? 1 : 0));
+          return;
+        }
+        if (key === "Enter") {
+          if (selectedConfirm === 0 && orderedKeys.length > 1) {
+            const storyKey =
+              orderedKeys[Math.min(selectedShelfIndex, orderedKeys.length - 1)];
+            if (storyKey) void performDeleteStory(storyKey);
+          }
+          setScreen(null);
           return;
         }
         if (key === "Escape" || key === "`" || key === "Backspace") {
@@ -1223,11 +1260,14 @@ export const GamepadInterface = () => {
       expandedModel,
       openNote,
       handleKeepAction,
+      performDeleteStory,
+      selectedConfirm,
       selectedShelfIndex,
       selectedStoryAction,
       selectedTurnAction,
       setCurrentLoomId,
       setProjection,
+      setSelectedConfirm,
       setSelectedShelfIndex,
       setSelectedStoryAction,
       setSelectedTurnAction,
@@ -1622,6 +1662,36 @@ export const GamepadInterface = () => {
                 selected={selectedStoryAction}
                 onSelect={(index) => activateStoryAction(index)}
                 ariaLabel="Story actions"
+              />
+            </MenuScreen>
+          ) : screen === "confirm-delete" ? (
+            <MenuScreen>
+              <ActionMenu
+                actions={[
+                  {
+                    id: "delete",
+                    label: `delete "${
+                      storyTitles[
+                        orderedKeys[
+                          Math.min(selectedShelfIndex, orderedKeys.length - 1)
+                        ]
+                      ] ?? "this loom"
+                    }"`,
+                  },
+                  { id: "keep", label: "keep it" },
+                ]}
+                selected={selectedConfirm}
+                onSelect={(index) => {
+                  if (index === 0 && orderedKeys.length > 1) {
+                    const storyKey =
+                      orderedKeys[
+                        Math.min(selectedShelfIndex, orderedKeys.length - 1)
+                      ];
+                    if (storyKey) void performDeleteStory(storyKey);
+                  }
+                  setScreen(null);
+                }}
+                ariaLabel="Confirm delete"
               />
             </MenuScreen>
           ) : screen === "note" ? (

@@ -22,7 +22,8 @@ export type Screen =
   | "edit"
   | "turn"
   | "note"
-  | "story-actions";
+  | "story-actions"
+  | "confirm-delete";
 
 export interface MenuParams {
   temperature: number;
