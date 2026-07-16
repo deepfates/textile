@@ -1849,7 +1849,13 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
-            {onLoom && projection === "loom" ? (
+            {onLoom &&
+            projection === "loom" &&
+            !error &&
+            !importNotice &&
+            !emptyGeneration ? (
+              // Yield the strip to a transient notice ("Note saved ✓" etc.) — the
+              // centered notice and this left-pinned cluster otherwise overlap.
               <div className="story-focus-cluster">
                 <AuthorshipIndicator
                   node={getCurrentPath()[getCurrentPath().length - 1]}
