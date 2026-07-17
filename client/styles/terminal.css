@@ -830,6 +830,17 @@ html, body {
   width: 100%;
   min-height: 0;
   flex: 1;
+}
+
+/* On a descend from the floor, the selected sibling's highlight fades in a beat
+   late (the map "wakes up") instead of popping in the handoff frame. */
+.minimap-container.descend-entry .minimap-node {
+  transition:
+    fill 160ms ease,
+    opacity 160ms ease;
+}
+
+.minimap-container {
   /* CSS variables for SVG theming.  --primary-color is the "selected"
      node fill — intentionally bound to the subdued primary so the map's
      selected node reads the same value as every other focus highlight

@@ -279,6 +279,13 @@ export const GamepadInterface = () => {
   // Persists while the drawer or edit overlay is open, so closing just
   // restores the prior view — no stash/return ref needed.
   const [projection, setProjection] = useState<"loom" | "map" | "bin">("loom");
+  // "descend" only while the map was entered by dropping in from the floor, so
+  // that map opens in the floor's frame (continuous handoff). Cleared whenever we
+  // leave the map — the standalone map (START from loom) never sees it.
+  const [mapEntry, setMapEntry] = useState<"descend" | null>(null);
+  useEffect(() => {
+    if (projection !== "map") setMapEntry(null);
+  }, [projection]);
   // Cursor across stories on the "shelf" (projection === "bin"), and the cursor
   // in the per-story action menu (screen === "story-actions").
   const [selectedShelfIndex, setSelectedShelfIndex] = useState(0);
@@ -1202,6 +1209,7 @@ export const GamepadInterface = () => {
           if (storyKey) {
             touchStoryActive(storyKey);
             setCurrentLoomId(storyKey);
+            setMapEntry("descend");
             setProjection("map");
           }
           return;
@@ -1681,6 +1689,7 @@ export const GamepadInterface = () => {
               isVisible={projection === "map" && screen === null}
               lastMapNodeId={lastMapNodeId}
               currentNodeId={highlightedNode.id}
+              entry={mapEntry ?? undefined}
             />
           ) : projection === "bin" && screen === null ? (
             <StoryForest
@@ -1698,6 +1707,7 @@ export const GamepadInterface = () => {
                 if (storyKey) {
                   touchStoryActive(storyKey);
                   setCurrentLoomId(storyKey);
+                  setMapEntry("descend");
                   // Descend into the tree that's blooming beneath the root —
                   // stay in the map, now flying THIS story.
                   setProjection("map");

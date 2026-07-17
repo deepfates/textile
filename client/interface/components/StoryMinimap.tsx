@@ -71,6 +71,16 @@ interface StoryMinimapProps {
    * is identical in both modes — only the framing changes.
    */
   fit?: "floor";
+  /**
+   * Set to "descend" only when the map is entered by dropping in from the floor.
+   * It opens the fly-over camera IN THE FLOOR'S FRAME — root pinned to the
+   * horizontal centre (giving the chase-camera the slack to actually centre the
+   * root, which it normally can't), no open fade, and the selected sibling
+   * paints in a beat late ("the map wakes up") instead of popping. So the
+   * floor→story handoff shows the same frame on both sides. Undefined (the
+   * standalone map, opened with START) = byte-identical fly-over as before.
+   */
+  entry?: "descend";
 }
 
 /**
@@ -238,9 +248,19 @@ export const StoryMinimap = ({
   lastMapNodeId,
   currentNodeId,
   fit,
+  entry,
 }: StoryMinimapProps) => {
   const { root } = tree;
   const isFloor = fit === "floor";
+  const isDescendEntry = entry === "descend" && !isFloor;
+  // Widen the fly-over canvas to viewportW/2 of slack per side when entering from
+  // the floor, so the root can actually be scrolled to the centre (the normal map
+  // is only 600px wide, which clamps the root off-centre in a wider viewport).
+  const [entryViewportW, setEntryViewportW] = useState(0);
+  // The selected sibling paints one beat after a descend so the map "wakes up"
+  // rather than popping a highlight in the handoff frame. Non-descend mounts
+  // start settled (no flash).
+  const [descendSettled, setDescendSettled] = useState(entry !== "descend");
   const coords = useCoords(root);
   const edges = useEdges(root);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -258,6 +278,24 @@ export const StoryMinimap = ({
     ro.observe(el);
     return () => ro.disconnect();
   }, [isFloor]);
+
+  // Measure the viewport width for the descend-entry canvas padding, before paint
+  // (layout-effect setState flushes pre-paint, so no first-frame flash).
+  useLayoutEffect(() => {
+    if (!isDescendEntry || !viewportRef.current) return;
+    setEntryViewportW(viewportRef.current.clientWidth);
+  }, [isDescendEntry]);
+
+  // On a fresh descend, hold the selected-sibling highlight back a beat.
+  useEffect(() => {
+    if (!isDescendEntry) {
+      setDescendSettled(true);
+      return;
+    }
+    setDescendSettled(false);
+    const t = window.setTimeout(() => setDescendSettled(true), 150);
+    return () => window.clearTimeout(t);
+  }, [isDescendEntry]);
 
   // Determine node that matches current reader position for highlight
   const highlightedNode = (() => {
@@ -297,9 +335,14 @@ export const StoryMinimap = ({
 
   // Add padding around the tree
   const padding = LANE_WIDTH * 2;
+  // Descend-entry widens the canvas so there's slack to scroll the root to the
+  // viewport centre (the normal 600px canvas clamps it off-centre).
+  const entryPad = isDescendEntry
+    ? Math.max(padding, entryViewportW / 2)
+    : padding;
   const svgWidth = isSingleNode
     ? SINGLE_NODE_SVG_WIDTH
-    : Math.max(600, maxX - minX + padding * 2); // Ensure minimum width
+    : Math.max(600, maxX - minX + entryPad * 2); // Ensure minimum width
   const svgHeight = isSingleNode
     ? SINGLE_NODE_SVG_HEIGHT
     : Math.max(maxY + MAX_NODE_HEIGHT, ROW_HEIGHT * 4);
@@ -358,6 +401,21 @@ export const StoryMinimap = ({
     }
 
     const viewport = viewportRef.current;
+
+    // Descend-entry: open in the FLOOR'S frame — the root scrolled to the
+    // horizontal centre (where the dial pill was), tree top at the top. Skip the
+    // cursor-chasing dance so the handoff frame matches the floor exactly. Wait
+    // for the viewport width to be measured (which widens the canvas) before
+    // positioning, else we'd centre against the un-widened 600px canvas and clamp.
+    if (isDescendEntry && !hasPositionedRef.current) {
+      if (entryViewportW === 0) return;
+      hasPositionedRef.current = true;
+      const rootCanvasX = (coords[root.id]?.x ?? 0) + rootOffset;
+      viewport.scrollLeft = Math.max(0, rootCanvasX - viewport.clientWidth / 2);
+      viewport.scrollTop = 0;
+      return;
+    }
+
     const viewportRect = viewport.getBoundingClientRect();
 
     // A function to calculate the ideal scroll position to center a node (and its sibling)
@@ -462,10 +520,15 @@ export const StoryMinimap = ({
     isVisible,
     lastMapNodeId,
     isFloor,
+    isDescendEntry,
+    entryViewportW,
+    root.id,
   ]);
 
   return (
-    <div className="minimap-container view-fade">
+    <div
+      className={`minimap-container ${isDescendEntry ? "descend-entry" : "view-fade"}`}
+    >
       <div
         ref={viewportRef}
         className={`minimap-viewport ${
@@ -595,7 +658,8 @@ export const StoryMinimap = ({
             {Object.entries(coords).map(([id, c]) => {
               const node = c.path[c.path.length - 1];
               const isHighlighted = id === highlightedNode.id;
-              const isSelected = selectedSibling && id === selectedSibling.id;
+              const isSelected =
+                descendSettled && selectedSibling && id === selectedSibling.id;
               const isGenerating = inFlight.has(id);
               const isOnFavoritePath = currentPath.some(
                 (pathNode) => pathNode.id === id,
@@ -661,7 +725,7 @@ export const StoryMinimap = ({
             ? highlightedNode.text.split("\n")[0]
             : isSingleNode
             ? "A to branch from here"
-            : selectedSibling
+            : descendSettled && selectedSibling
             ? selectedSibling.text.split("\n")[0]
             : highlightedNode.text.split("\n")[0]
         }
