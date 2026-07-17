@@ -113,6 +113,12 @@ const SETTINGS_ROW_LABELS = [
 // like this one; the ActionMenu primitive and the key handling stay put.
 const TURN_ACTIONS = ["keep", "note", "edit"] as const;
 
+// What ⌫ does on a focused turn in the loom. "menu" = menu-first (⌫ opens the
+// action sheet; edit is a row inside it); "edit" = edit-first (⌫ jumps straight
+// into the editor). The owner is still deciding which; flip this ONE constant
+// to change the mapping — nothing else moves.
+const BACKSPACE_ON_TURN = "menu" as "menu" | "edit";
+
 // The SHELF's per-story action set (the "root bin" second layer). Same shape as
 // TURN_ACTIONS — a stable order that drives both the ActionMenu labels and the
 // key handler. "open" is redundant with A on the shelf but stays so touch users
@@ -149,9 +155,9 @@ function floorMenuActions(sort: StorySortOption): MenuAction[] {
  * the rows + what Enter does change. Actions are captured when the menu opens.
  */
 interface Menu {
-  /** Mode-bar title (e.g. "TURN", "LOOM ACTIONS", "FLOOR", 'DELETE "…"?'). */
+  /** Sheet title (e.g. "TURN", "LOOM ACTIONS", "FLOOR", 'DELETE "…"?'). */
   title: string;
-  /** Mode-bar hint; defaults to the standard move/choose/close line. */
+  /** Sheet hint; defaults to the standard move/choose/close line. */
   hint?: string;
   actions: MenuAction[];
   onActivate: (index: number) => void;
@@ -1320,7 +1326,12 @@ export const GamepadInterface = () => {
         return;
       }
       if (key === "Backspace") {
-        // ⌫ acts on the focused TURN: keep / note / edit.
+        // ⌫ acts on the focused TURN. Menu-first vs edit-first is an open
+        // owner call — BACKSPACE_ON_TURN (top of file) is the one-line flip.
+        if (BACKSPACE_ON_TURN === "edit") {
+          setScreen("edit");
+          return;
+        }
         openMenu({
           title: "TURN",
           actions: buildTurnActions(getCurrentPath()[currentDepth]),
@@ -1407,6 +1418,10 @@ export const GamepadInterface = () => {
 
   // True only when the loom view is the visible, unobstructed surface.
   const onLoom = screen === null && projection === "loom";
+  // The action menu is a bottom SHEET overlaid on the view it acts on — the
+  // loom / map / floor stays rendered and visible underneath, so you can still
+  // see what you're acting on (owner ruling: overlay, don't replace).
+  const sheetOpen = screen === "menu" && menu !== null;
 
   // Scroll to current depth when navigation changes.  Center on the
   // cursor span (path[currentDepth + 1]) so the user's eye lands on the
@@ -1470,8 +1485,11 @@ export const GamepadInterface = () => {
 
   // Removed LOOM scroll preservation to keep behavior simple and reliable
 
+  // The action sheet OVERLAYS the view instead of replacing it, so the mode
+  // bar keeps narrating the view underneath (loom / map / floor) while the
+  // sheet carries its own title + hint. Resolve the mode as if no menu is up.
   const currentMode = getRegisteredMode({
-    screen,
+    screen: screen === "menu" ? null : screen,
     projection,
     drawerTab,
     cursorOnTabs,
@@ -1510,14 +1528,7 @@ export const GamepadInterface = () => {
           aria-label="Story Display"
         >
           {/* Unified top mode bar */}
-          <ModeBar
-            title={screen === "menu" && menu ? menu.title : currentMode.title}
-            hint={
-              screen === "menu" && menu
-                ? (menu.hint ?? DEFAULT_MENU_HINT)
-                : currentMode.hint
-            }
-          />
+          <ModeBar title={currentMode.title} hint={currentMode.hint} />
           {screen === "drawer" ? (
             <Drawer
               tab={drawerTab}
@@ -1664,7 +1675,7 @@ export const GamepadInterface = () => {
                 </MenuScreen>
               ) : null}
             </Drawer>
-          ) : projection === "map" && screen === null ? (
+          ) : projection === "map" && (screen === null || sheetOpen) ? (
             <StoryMinimap
               tree={storyTree}
               currentDepth={currentDepth}
@@ -1686,12 +1697,12 @@ export const GamepadInterface = () => {
                   }
                 });
               }}
-              isVisible={projection === "map" && screen === null}
+              isVisible={projection === "map" && (screen === null || sheetOpen)}
               lastMapNodeId={lastMapNodeId}
               currentNodeId={highlightedNode.id}
               entry={mapEntry ?? undefined}
             />
-          ) : projection === "bin" && screen === null ? (
+          ) : projection === "bin" && (screen === null || sheetOpen) ? (
             <StoryForest
               // orderedKeys is derived from `trees`, so every id has a tree.
               stories={orderedKeys.map((id) => ({
@@ -1745,15 +1756,6 @@ export const GamepadInterface = () => {
                 onCancel={() => setScreen(null)}
               />
             </MenuScreen>
-          ) : screen === "menu" && menu ? (
-            <MenuScreen>
-              <ActionMenu
-                actions={menu.actions}
-                selected={menuCursor}
-                onSelect={(index) => menu.onActivate(index)}
-                ariaLabel={menu.title}
-              />
-            </MenuScreen>
           ) : screen === "note" ? (
             <MenuScreen>
               <EditMenu
@@ -1766,9 +1768,15 @@ export const GamepadInterface = () => {
             </MenuScreen>
           ) : null}
 
-          {/* Keep LOOM mounted; hide when a menu is active */}
+          {/* Keep LOOM mounted; hide under the full-screen overlays (edit /
+              note / drawer) but stay VISIBLE under the bottom action sheet. */}
           <div
-            style={{ display: onLoom ? "flex" : "none" }}
+            style={{
+              display:
+                onLoom || (sheetOpen && projection === "loom")
+                  ? "flex"
+                  : "none",
+            }}
             className="flex-1 flex flex-col min-h-0 overflow-hidden"
           >
             <StoryText
@@ -1895,6 +1903,33 @@ export const GamepadInterface = () => {
             ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
+
+          {/* ACTION SHEET — the one action-menu door, drawn as a drawer rising
+              from the bottom edge by the controls. It OVERLAYS the loom / map /
+              floor (still visible above it) instead of replacing the screen,
+              and carries its own title + hint so the ModeBar keeps naming the
+              view you were on. */}
+          {sheetOpen && menu ? (
+            <div
+              className="action-sheet"
+              role="dialog"
+              aria-label={menu.title}
+              data-testid="action-sheet"
+            >
+              <div className="action-sheet-bar">
+                <strong className="action-sheet-title">{menu.title}</strong>
+                <span className="action-sheet-hint">
+                  {menu.hint ?? DEFAULT_MENU_HINT}
+                </span>
+              </div>
+              <ActionMenu
+                actions={menu.actions}
+                selected={menuCursor}
+                onSelect={(index) => menu.onActivate(index)}
+                ariaLabel={menu.title}
+              />
+            </div>
+          ) : null}
         </section>
 
         {/* Controls */}

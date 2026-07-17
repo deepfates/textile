@@ -42,8 +42,10 @@ export const registeredModes: RegisteredMode[] = [
     matches: ({ screen }) => screen === "note",
   },
   {
-    // One entry for every action-overlay; the real title/hint come from the
-    // active Menu descriptor (Interface overrides these per-menu).
+    // One entry for every action-overlay. At runtime the action SHEET carries
+    // the active Menu descriptor's title/hint itself, and Interface resolves
+    // the mode bar as if no menu were up (the sheet overlays the view); this
+    // entry remains for callers that ask about screen "menu" directly.
     id: "menu",
     title: "MENU",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",

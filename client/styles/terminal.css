@@ -284,6 +284,8 @@ html, body {
   width: 100%;
   background: var(--theme-background);
   box-sizing: border-box;
+  /* Anchor for the bottom action-sheet overlay. */
+  position: relative;
 }
 
 .terminal-screen.nav-bonk {
@@ -1001,6 +1003,78 @@ html, body {
   border-radius: 3px;
 }
 
+
+/* ===== ACTION SHEET =====
+ * The one action-menu door, drawn as a drawer rising from the bottom edge of
+ * the inner viewport (owner ruling: the controls are by the bottom, and the
+ * view you were on stays visible above it — no full-screen air). Sized to its
+ * rows, capped so the story still peeks over it on short screens. Theme vars
+ * only; single grid size — hierarchy is weight + muting, never font size. */
+.action-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  max-height: 60%;
+  background: var(--theme-background);
+  border-top: 2px solid var(--theme-text);
+  box-sizing: border-box;
+  animation: action-sheet-rise 140ms ease-out;
+}
+
+@keyframes action-sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-sheet {
+    animation: none;
+  }
+}
+
+/* Same grammar as the mode bar (bold title left, muted hint right), so the
+   sheet reads as another strip of the same machine, not a new widget. */
+.action-sheet-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5ch;
+  padding: 0.75ch 1.25ch;
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.action-sheet-title {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.action-sheet-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+/* Content-sized, not flex-grown: the sheet hugs its rows (no air) and only
+   scrolls when the row list outgrows the cap. */
+.action-sheet .menu-content {
+  flex: 0 1 auto;
+  overflow-y: auto;
+  padding-bottom: 0.5rem;
+}
 
 /* Selection conventions:
  *   .menu-item.selected           -> solid fill with focused-subdued (settings, models)

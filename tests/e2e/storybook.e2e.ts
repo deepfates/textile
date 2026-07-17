@@ -113,7 +113,11 @@ test("storybook: every forest-floor / menu screen", async ({ page }) => {
   await shot(page, "01-loom");
 
   await page.keyboard.press("Backspace");
-  await expect(page.locator(".mode-bar-title")).toHaveText("TURN");
+  // The action menu is a bottom SHEET: it carries its own title while the mode
+  // bar keeps naming the view underneath, and the story stays visible.
+  await expect(page.locator(".action-sheet-title")).toHaveText("TURN");
+  await expect(page.locator(".mode-bar-title")).toHaveText("LOOM");
+  await expect(page.locator(".story-text")).toBeVisible();
   await shot(page, "02-menu-turn");
   await page.keyboard.press("Escape");
 
@@ -124,7 +128,7 @@ test("storybook: every forest-floor / menu screen", async ({ page }) => {
 
   await riseToFloor(page);
   await page.keyboard.press("`");
-  await expect(page.locator(".mode-bar-title")).toHaveText("FLOOR");
+  await expect(page.locator(".action-sheet-title")).toHaveText("FLOOR");
   await page.keyboard.press("Enter");
   await expect(page.locator(".mode-bar-title")).toHaveText("LOOM");
   await growTree(page, 3);
@@ -133,17 +137,19 @@ test("storybook: every forest-floor / menu screen", async ({ page }) => {
   await shot(page, "04-floor");
 
   await page.keyboard.press("Backspace");
-  await expect(page.locator(".mode-bar-title")).toHaveText("LOOM ACTIONS");
+  await expect(page.locator(".action-sheet-title")).toHaveText("LOOM ACTIONS");
+  // The floor's dial stays visible under the sheet.
+  await expect(page.locator(".story-forest")).toBeVisible();
   await shot(page, "05-menu-loom-actions");
 
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".mode-bar-title")).toHaveText("DELETE LOOM?");
+  await expect(page.locator(".action-sheet-title")).toHaveText("DELETE LOOM?");
   await shot(page, "06-menu-delete-confirm");
   await page.keyboard.press("Enter");
 
   await page.keyboard.press("`");
-  await expect(page.locator(".mode-bar-title")).toHaveText("FLOOR");
+  await expect(page.locator(".action-sheet-title")).toHaveText("FLOOR");
   await shot(page, "07-menu-floor");
   await page.keyboard.press("Escape");
 
@@ -178,7 +184,7 @@ test("storybook: dial sweep through many looms + variation", async ({
   const depths = [4, 1, 3, 1, 2];
   for (const d of depths) {
     await page.keyboard.press("`");
-    await expect(page.locator(".mode-bar-title")).toHaveText("FLOOR");
+    await expect(page.locator(".action-sheet-title")).toHaveText("FLOOR");
     await page.keyboard.press("Enter"); // new loom → drops into LOOM
     await expect(page.locator(".mode-bar-title")).toHaveText("LOOM");
     await growTree(page, d);
