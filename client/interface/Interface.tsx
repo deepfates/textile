@@ -1175,13 +1175,24 @@ export const GamepadInterface = () => {
         }
         const focused = () => orderedKeys[Math.min(selectedShelfIndex, count - 1)];
         // Left/right DIAL the row of sibling roots — the selected root stays
-        // pinned to the center, the row slides beneath it.
+        // pinned to the center, the row slides beneath it. CLAMP (not wrap): a
+        // loom keeps its position in the row (spatial memory — leftmost is always
+        // leftmost), and dialing past an end bonks rather than lurching the whole
+        // row across the seam.
         if (key === "ArrowLeft") {
-          setSelectedShelfIndex((i) => (i + count - 1) % count);
+          if (selectedShelfIndex <= 0) {
+            triggerBonk(key);
+            return;
+          }
+          setSelectedShelfIndex((i) => Math.max(0, i - 1));
           return;
         }
         if (key === "ArrowRight") {
-          setSelectedShelfIndex((i) => (i + 1) % count);
+          if (selectedShelfIndex >= count - 1) {
+            triggerBonk(key);
+            return;
+          }
+          setSelectedShelfIndex((i) => Math.min(count - 1, i + 1));
           return;
         }
         // Down descends into the tree blooming beneath the selected root — stay
