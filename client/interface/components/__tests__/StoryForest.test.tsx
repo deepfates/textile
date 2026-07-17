@@ -19,25 +19,29 @@ const render = (selected: number) =>
   );
 
 describe("StoryForest", () => {
-  it("shows every story as a root on the dial", () => {
+  it("shows every loom as a root-pill (title only as an aria-label, no visible text)", () => {
     const html = render(0);
-    expect(html).toContain("Story 1");
-    expect(html).toContain("Story 2");
+    expect(html.split("story-forest-pill").length - 1).toBe(2);
+    expect(html).toContain('aria-label="Story 1"');
+    expect(html).toContain('aria-label="Story 2"');
+    // No visible title/tag chrome on the floor.
+    expect(html).not.toContain("story-forest-root-label");
+    expect(html).not.toContain("story-forest-root-tag");
   });
 
   it("pins exactly one root as the centered selection", () => {
     const html = render(1);
-    expect(html.split("story-forest-root selected").length - 1).toBe(1);
+    expect(html.split('aria-current="true"').length - 1).toBe(1);
   });
 
   it("translates the row so the selected root lands at the center", () => {
-    // FOREST_CELL 220, selected index 1 → -(1 + 0.5) * 220 = -330px
+    // FOREST_PITCH 34, selected index 1 → -(1 + 0.5) * 34 = -51px
     const html = render(1);
-    expect(html).toContain("translateX(-330px)");
+    expect(html).toContain("translateX(-51px)");
   });
 
-  it("marks the current story", () => {
-    const html = render(0);
-    expect(html).toContain("story-forest-root-tag");
+  it("marks the current loom with the map's current treatment", () => {
+    const html = render(0); // story b (index 1) is current, not selected
+    expect(html).toContain("story-forest-cell current");
   });
 });

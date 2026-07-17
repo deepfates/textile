@@ -852,68 +852,61 @@ html, body {
   flex-direction: column;
 }
 
-.story-forest-floor {
+/* The dial strip: a row of root-pills that slides under a fixed centre. No
+   border, no marker line, no titles — the filled centred pill (and the bloom's
+   root directly below it) IS the focal point. Pills read as the map's nodes, so
+   the floor looks like the map one zoom level up. Root theming pulled from the
+   same values .minimap-container uses. */
+.story-forest-dial {
   position: relative;
   overflow: hidden;
-  height: 2.5rem;
+  height: 3.5rem;
   flex: none;
-  border-bottom: 1px solid var(--theme-border);
-}
-
-/* Centre marker — the fixed focal point the fingerprint always returns to. */
-.story-forest-floor::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  border-left: 1px solid var(--theme-focused-foreground);
-  opacity: 0.5;
+  --pill-stroke: var(--theme-text);
+  --pill-current: var(--theme-background-modal);
+  --pill-focus: var(--theme-focused-foreground-subdued);
+  --pill-empty: var(--theme-background);
 }
 
 .story-forest-row {
   position: absolute;
   left: 50%;
-  top: 0;
-  height: 100%;
+  bottom: 0.6rem; /* baseline the skyline sits on */
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   transition: transform 180ms ease;
 }
 
-.story-forest-root {
+.story-forest-cell {
   appearance: none;
   background: transparent;
   border: none;
-  color: var(--theme-muted);
+  padding: 0;
   cursor: pointer;
-  font: inherit;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
+  display: flex;
   justify-content: center;
-  gap: 0.75ch;
-  padding: 0 1ch;
-  white-space: nowrap;
-  overflow: hidden;
-  opacity: 0.45;
+  align-items: flex-end;
 }
 
-.story-forest-root-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.story-forest-pill {
+  display: block;
+  width: 14px;
+  border: 1px solid var(--pill-stroke);
+  border-radius: 2px;
+  background: var(--pill-empty);
+  opacity: 0.4;
 }
 
-.story-forest-root.selected {
-  color: var(--theme-text);
+/* current = the loom you rose from (map's "current" treatment); selected =
+   the dialed/centred loom (map's "selected" treatment). selected wins when both. */
+.story-forest-cell.current .story-forest-pill {
+  background: var(--pill-current);
   opacity: 1;
 }
-
-.story-forest-root-tag {
-  text-transform: uppercase;
-  opacity: 0.55;
+.story-forest-cell.selected .story-forest-pill {
+  background: var(--pill-focus);
+  border-width: 1.5px;
+  opacity: 1;
 }
 
 .story-forest-bloom {

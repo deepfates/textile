@@ -8,9 +8,26 @@ const EMPTY_GENERATING: Record<
   { depth: number; index: number | null }
 > = {};
 
-// Fixed cell width so the dial's centering math is exact: the selected root
-// always lands in the same spot, and the row slides beneath it.
-export const FOREST_CELL = 220;
+// Fixed per-loom pitch so the dial's centering math is exact: cell `sel` centres
+// on the strip's midline (`left:50%` + translateX below), and the row slides
+// beneath it. A pitch this small shows ~10 siblings on a phone — you can count
+// your looms — where the old 220px label cells showed barely one.
+export const FOREST_PITCH = 34;
+const PILL_WIDTH = 14; // == the map's NODE_WIDTH, so a root reads as a map node
+const PILL_MIN_H = 16;
+const PILL_MAX_H = 46;
+
+// A loom's pill height encodes its size (turn count) — an absolute mapping, so a
+// loom's silhouette is stable and doesn't reshuffle when you add another loom.
+// The collapsed row becomes a recognizable skyline, not uniform tape.
+function countTurns(node: StoryNode): number {
+  let n = 1;
+  for (const child of node.continuations ?? []) n += countTurns(child);
+  return n;
+}
+function pillHeight(turns: number): number {
+  return Math.min(PILL_MAX_H, PILL_MIN_H + Math.sqrt(Math.max(0, turns - 1)) * 5.5);
+}
 
 export interface ForestStory {
   id: string;
@@ -30,16 +47,15 @@ interface StoryForestProps {
 }
 
 /**
- * The forest floor: every story is a ROOT sitting on an invisible baseline, in a
- * left-right row of siblings. Only the selected root blooms its tree below it
- * (the others stay bare), so nothing re-packs as you dial — and you find the one
- * you want by its SILHOUETTE plus the minibuffer, not by reading titles. The
- * whole thing is a PROJECTION over the separate looms; it's the map's top zoom
- * level, not a new surface.
- *
- * The dial is iOS-picker style: the selected root is pinned to the center and
- * the row translates under it, so the fingerprint always shows in the same
- * place. That fixed focal point is the point — stable attention, moving world.
+ * The forest floor: every loom is a ROOT — drawn as a node in the map's own
+ * idiom (a pill whose height is the loom's size) — in a left-right row of
+ * siblings you can count. You DIAL through them: the selected root stays pinned
+ * at a fixed centre and the row slides under it (iOS-picker style), so the
+ * selected loom's SILHOUETTE always blooms in the same place. Only the selected
+ * root blooms its tree (via a fitted StoryMinimap); the others stay collapsed as
+ * bare pills, so nothing re-packs as you dial. It is a PROJECTION over the
+ * separate looms — the map's top zoom level, not a new surface. No titles on the
+ * floor: you recognize a loom by its shape + the minibuffer, not by reading.
  */
 export const StoryForest = ({
   stories,
@@ -47,34 +63,41 @@ export const StoryForest = ({
   onFocus,
   onDescend,
 }: StoryForestProps) => {
-  const clamped = Math.min(Math.max(0, selected), Math.max(0, stories.length - 1));
+  const clamped = Math.min(
+    Math.max(0, selected),
+    Math.max(0, stories.length - 1),
+  );
   const sel = stories[clamped];
   return (
     <div className="story-forest view-fade" role="group" aria-label="Your looms">
-      <div className="story-forest-floor">
+      <div className="story-forest-dial">
+        {/* The row of root-pills. Constant geometry — dialing only changes the
+            group's translateX, so neighbours never move relative to each other
+            and no layout recomputes; the bloom below swaps in place. */}
         <div
           className="story-forest-row"
-          style={{ transform: `translateX(${-(clamped + 0.5) * FOREST_CELL}px)` }}
+          style={{ transform: `translateX(${-(clamped + 0.5) * FOREST_PITCH}px)` }}
         >
           {stories.map((s, i) => (
             <button
               key={s.id}
               type="button"
               className={[
-                "story-forest-root",
-                i === clamped ? "selected" : "",
+                "story-forest-cell",
                 s.isCurrent ? "current" : "",
+                i === clamped ? "selected" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              style={{ width: FOREST_CELL }}
+              style={{ width: FOREST_PITCH }}
               aria-current={i === clamped}
+              aria-label={s.title}
               onClick={() => (i === clamped ? onDescend(i) : onFocus(i))}
             >
-              <span className="story-forest-root-label">{s.title}</span>
-              {s.isCurrent ? (
-                <span className="story-forest-root-tag">current</span>
-              ) : null}
+              <span
+                className="story-forest-pill"
+                style={{ height: pillHeight(countTurns(s.tree.root)) }}
+              />
             </button>
           ))}
         </div>
