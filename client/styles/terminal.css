@@ -899,6 +899,9 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: flex-end;
+  /* Full-height transparent tap target: the visible pill may be only 16px
+     tall, but a thumb gets the whole strip above the baseline. */
+  height: 2.9rem;
 }
 
 .story-forest-pill {

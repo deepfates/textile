@@ -169,7 +169,7 @@ test("storybook: every forest-floor / menu screen", async ({ page }) => {
 test("storybook: dial sweep through many looms + variation", async ({
   page,
 }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   await mockGeneration(page, "A road out of Absalom");
   await page.setViewportSize(DESKTOP);
   await page.goto("/");
@@ -191,18 +191,74 @@ test("storybook: dial sweep through many looms + variation", async ({
     await riseToFloor(page);
   }
 
-  // THE DIAL SWEEP: six looms, one press at a time. Each frame shows the row
-  // sliding under the fixed centre and a different silhouette blooming — plus
-  // the wrap-around at the ends (the dial is modular).
+  // THE DIAL SWEEP — MOBILE-FIRST: six looms, one press at a time, captured at
+  // 375px first (the form factor that matters) and desktop. Each frame shows
+  // the row sliding under the fixed centre and a different silhouette blooming
+  // in place. The dial CLAMPS at the ends (spatial memory — leftmost stays
+  // leftmost; past the end bonks, no wrap).
+  //
+  // THE FIXED-POINT PROOF (mechanical, not eyeballed): at every dial position,
+  // (a) the centred pill's midline sits on the dial's midline and its baseline
+  // holds still (DOM geometry), and (b) a pixel crop of the centred pill's
+  // constant bottom band is BYTE-IDENTICAL across all positions — the focal
+  // point literally never moves a pixel; only the row and the bloom change.
+  const bands: Buffer[] = [];
+  let anchor: { cx: number; bottom: number } | null = null;
+  const pillGeometry = () =>
+    page.evaluate(() => {
+      const dial = document
+        .querySelector(".story-forest-dial")!
+        .getBoundingClientRect();
+      const pill = document
+        .querySelector(".story-forest-cell.selected .story-forest-pill")!
+        .getBoundingClientRect();
+      return {
+        dialCx: dial.left + dial.width / 2,
+        cx: pill.left + pill.width / 2,
+        bottom: pill.bottom,
+      };
+    });
   for (let i = 0; i < 6; i += 1) {
-    await shotDesktop(page, `v-dial-${String(i).padStart(2, "0")}`);
+    const name = `v-dial-${String(i).padStart(2, "0")}`;
+    await page.setViewportSize(MOBILE);
+    await page.waitForTimeout(260); // let the slide transition settle
+    const geom = await pillGeometry();
+    // Centred on the dial's midline…
+    expect(Math.abs(geom.cx - geom.dialCx)).toBeLessThanOrEqual(1);
+    // …and at the exact same point as every other position.
+    anchor ??= geom;
+    expect(Math.abs(geom.cx - anchor.cx)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(geom.bottom - anchor.bottom)).toBeLessThanOrEqual(0.5);
+    // The constant band: every pill is ≥16px tall and bottom-aligned, and the
+    // selected fill/stroke are theme constants, so this crop must not vary.
+    bands.push(
+      await page.screenshot({
+        clip: { x: geom.cx - 12, y: geom.bottom - 14, width: 24, height: 12 },
+      }),
+    );
+    await page.screenshot({ path: `${SHOTS}/${name}.mobile.png` });
+    await shotDesktop(page, name);
     await page.keyboard.press("ArrowRight");
-    await page.waitForTimeout(240); // let the slide transition settle
   }
-  // One mobile frame of the floor, to show the dial on a phone.
+  bands.forEach((band, i) => {
+    expect(
+      band.equals(bands[0]),
+      `fixed point broken: centred pill band differs at dial position ${i}`,
+    ).toBe(true);
+  });
+  // CLAMP: that last ArrowRight was pressed at the right end — it must bonk,
+  // not wrap back to the start.
   await page.setViewportSize(MOBILE);
-  await page.waitForTimeout(140);
-  await page.screenshot({ path: `${SHOTS}/v-dial-mobile.mobile.png` });
+  await page.waitForTimeout(260);
+  const endLabel = await page
+    .locator(".story-forest-cell.selected")
+    .getAttribute("aria-label");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(260);
+  await expect(page.locator(".story-forest-cell.selected")).toHaveAttribute(
+    "aria-label",
+    endLabel ?? "",
+  );
   await page.setViewportSize(DESKTOP);
 
   // CURATION state — keep + annotate a turn, then read it back so the ✓/✎
@@ -229,28 +285,57 @@ test("storybook: dial sweep through many looms + variation", async ({
   });
   await shot(page, "v-curation-kept-and-noted");
 
-  // THEMES — the floor across palettes (colour/position hierarchy, not size).
-  await setTheme(page, {
-    mode: "dark",
-    paletteLight: "theme-light",
-    paletteDark: "theme-outrun",
-  });
-  await riseToFloor(page);
-  await shotDesktop(page, "v-theme-outrun-floor");
-
-  await setTheme(page, {
-    mode: "light",
-    paletteLight: "theme-blue",
-    paletteDark: "theme-black-green",
-  });
-  await riseToFloor(page);
-  await shotDesktop(page, "v-theme-bsod-floor");
-
-  await setTheme(page, {
-    mode: "light",
-    paletteLight: "theme-aperture",
-    paletteDark: "theme-black-green",
-  });
-  await riseToFloor(page);
-  await shotDesktop(page, "v-theme-aperture-floor");
+  // THEMES — the floor across every palette (colour/position hierarchy, not
+  // size), each at both viewports. theme-light is the default already covered
+  // by 04-floor / v-dial-*.
+  const themes: Array<{
+    name: string;
+    prefs: { mode: string; paletteLight: string; paletteDark: string };
+  }> = [
+    {
+      name: "outrun",
+      prefs: {
+        mode: "dark",
+        paletteLight: "theme-light",
+        paletteDark: "theme-outrun",
+      },
+    },
+    {
+      name: "bsod",
+      prefs: {
+        mode: "light",
+        paletteLight: "theme-blue",
+        paletteDark: "theme-black-green",
+      },
+    },
+    {
+      name: "aperture",
+      prefs: {
+        mode: "light",
+        paletteLight: "theme-aperture",
+        paletteDark: "theme-black-green",
+      },
+    },
+    {
+      name: "phosphor",
+      prefs: {
+        mode: "dark",
+        paletteLight: "theme-light",
+        paletteDark: "theme-black-green",
+      },
+    },
+    {
+      name: "nerv",
+      prefs: {
+        mode: "dark",
+        paletteLight: "theme-light",
+        paletteDark: "theme-nerv",
+      },
+    },
+  ];
+  for (const { name, prefs } of themes) {
+    await setTheme(page, prefs);
+    await riseToFloor(page);
+    await shot(page, `v-theme-${name}-floor`);
+  }
 });

@@ -119,10 +119,10 @@ const TURN_ACTIONS = ["keep", "note", "edit"] as const;
 // to change the mapping — nothing else moves.
 const BACKSPACE_ON_TURN = "menu" as "menu" | "edit";
 
-// The SHELF's per-story action set (the "root bin" second layer). Same shape as
-// TURN_ACTIONS — a stable order that drives both the ActionMenu labels and the
-// key handler. "open" is redundant with A on the shelf but stays so touch users
-// who reached the menu still have it. Kept lowercase to match the turn menu.
+// The FLOOR's per-loom action set. Same shape as TURN_ACTIONS — a stable order
+// that drives both the ActionMenu labels and the key handler. "open" is
+// redundant with A on the floor but stays so touch users who reached the menu
+// still have it. Kept lowercase to match the turn menu.
 const STORY_ACTIONS = ["open", "share", "export", "delete"] as const;
 const STORY_ACTION_MENU: MenuAction[] = STORY_ACTIONS.map((id) => ({
   id,
@@ -1176,10 +1176,11 @@ export const GamepadInterface = () => {
         return;
       }
 
-      // SHELF (projection === "bin"): every story as a sibling under the root
-      // bin. Up/Down move across them, A/↵ opens one, ⌫ opens its action menu,
-      // START (or Left) returns to the story you rose from. No k/n curation here
-      // — there is no focused turn on the shelf, so it sits ahead of them.
+      // FLOOR (projection === "bin"): every loom a sibling root on the dial.
+      // ◄ ► dial the row (clamped — bonk at the ends), ↓ descends into the
+      // bloomed tree (map), A/↵ reads it (loom), ⌫ opens its action menu,
+      // ` acts on the floor itself, ↑ bonks (nothing above the floor). No k/n
+      // curation here — there is no focused turn on the floor.
       if (projection === "bin") {
         const count = orderedKeys.length;
         if (count === 0) {

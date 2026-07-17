@@ -551,7 +551,10 @@ export const StoryMinimap = ({
                   width: "100%",
                   height: "100%",
                   viewBox: floorViewBox,
-                  preserveAspectRatio: "xMidYMid meet",
+                  // Root pinned top-centre: the viewBox is built aspect-matched
+                  // to the container, but if they ever diverge the tree must
+                  // hang from the top (under the dial), not float to the middle.
+                  preserveAspectRatio: "xMidYMin meet",
                   style: { display: "block" as const },
                 }
               : { width: svgWidth, height: svgHeight })}
@@ -650,6 +653,9 @@ export const StoryMinimap = ({
                   fill="none"
                   strokeLinecap="square"
                   opacity={isAncestorEdge ? 0.8 : 0.4}
+                  // Floor camera shrinks big trees below scale 1 — keep the
+                  // hairline wires at their authored px so they don't go faint.
+                  vectorEffect={isFloor ? "non-scaling-stroke" : undefined}
                 />
               );
             })}
@@ -699,6 +705,9 @@ export const StoryMinimap = ({
                     strokeWidth={
                       isHighlighted || isSelected ? 1.5 : 0.8
                     }
+                    // Same guard as the edges: node outlines stay legible when
+                    // the floor viewBox scales a wide tree down.
+                    vectorEffect={isFloor ? "non-scaling-stroke" : undefined}
                     opacity={
                       isHighlighted
                         ? 1  // Current - full brightness
