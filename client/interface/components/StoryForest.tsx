@@ -84,8 +84,9 @@ export const StoryForest = ({
           <StoryMinimap
             key={sel.id}
             tree={sel.tree}
+            fit="floor"
             currentDepth={0}
-            selectedOptions={[0]}
+            selectedOptions={[]}
             currentPath={[sel.tree.root]}
             inFlight={EMPTY_SET}
             generatingInfo={EMPTY_GENERATING}

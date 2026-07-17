@@ -934,6 +934,13 @@ html, body {
 
 .minimap-viewport::-webkit-scrollbar { display: none; }
 
+/* Floor camera: no scroll, no padding — the viewBox frames the whole tree and
+   the svg fills the box. The specimen fits by construction, so nothing clips. */
+.minimap-viewport.floor {
+  overflow: hidden;
+  padding: 0;
+}
+
 .minimap-viewport.single-node {
   display: grid;
   place-items: center;
