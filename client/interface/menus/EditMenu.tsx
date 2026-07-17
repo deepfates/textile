@@ -7,18 +7,32 @@ interface EditMenuProps {
   node: StoryNode;
   onSave: (text: string) => Promise<void> | void;
   onCancel: () => Promise<void> | void;
+  /**
+   * Seed text for the field. Defaults to the node's text (editing a turn). The
+   * note overlay passes "" so a fresh annotation starts empty — same overlay,
+   * same controls, no native prompt.
+   */
+  initialText?: string;
+  placeholder?: string;
 }
 
-export const EditMenu = ({ node, onSave, onCancel }: EditMenuProps) => {
-  const [text, setText] = useState(node.text);
+export const EditMenu = ({
+  node,
+  onSave,
+  onCancel,
+  initialText,
+  placeholder,
+}: EditMenuProps) => {
+  const seed = initialText ?? node.text;
+  const [text, setText] = useState(seed);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const savingRef = useRef(false);
   const cancelledRef = useRef(false);
 
-  // Reset text when node changes
+  // Reset text when the seed changes (node switch, or reopening the overlay).
   useEffect(() => {
-    setText(node.text);
-  }, [node]);
+    setText(seed);
+  }, [seed]);
 
   // Focus the textarea when mounted
   useEffect(() => {
@@ -99,6 +113,7 @@ export const EditMenu = ({ node, onSave, onCancel }: EditMenuProps) => {
         className="edit-textarea"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        placeholder={placeholder}
         rows={1}
       />
     </div>
