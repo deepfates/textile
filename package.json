@@ -57,8 +57,5 @@
     "typescript": "^5.2.2",
     "vite": "^5.2.8",
     "vite-plugin-pwa": "^1.0.1"
-  },
-  "patchedDependencies": {
-    "@automerge/automerge-repo@2.5.5": "patches/@automerge%2Fautomerge-repo@2.5.5.patch"
   }
 }

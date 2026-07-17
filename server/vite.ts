@@ -119,7 +119,6 @@ export async function createServer() {
       },
       optimizeDeps: {
         include: ["eventemitter3"],
-        exclude: ["@automerge/automerge"],
       },
       server: {
         middlewareMode: true,
