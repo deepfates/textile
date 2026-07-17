@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useLayoutEffect } from "react";
+import { useMemo, useRef, useState, useEffect, useLayoutEffect } from "react";
 import { hierarchy } from "d3-hierarchy";
 import { flextree } from "d3-flextree";
 import type { StoryNode } from "../types";
@@ -62,6 +62,25 @@ interface StoryMinimapProps {
    * The ID of the currently highlighted node.
    */
   currentNodeId: string;
+  /**
+   * Camera mode. Default (undefined) = the map's fly-over: an oversized,
+   * scrollable canvas that chases the reader's cursor. "floor" = a specimen
+   * camera: the WHOLE tree fitted into the container via a viewBox symmetric
+   * about the root's x, so the root is pinned at the horizontal centre and the
+   * silhouette is always fully visible (no scroll, no clip). Node/edge rendering
+   * is identical in both modes — only the framing changes.
+   */
+  fit?: "floor";
+  /**
+   * Set to "descend" only when the map is entered by dropping in from the floor.
+   * It opens the fly-over camera IN THE FLOOR'S FRAME — root pinned to the
+   * horizontal centre (giving the chase-camera the slack to actually centre the
+   * root, which it normally can't), no open fade, and the selected sibling
+   * paints in a beat late ("the map wakes up") instead of popping. So the
+   * floor→story handoff shows the same frame on both sides. Undefined (the
+   * standalone map, opened with START) = byte-identical fly-over as before.
+   */
+  entry?: "descend";
 }
 
 /**
@@ -228,12 +247,55 @@ export const StoryMinimap = ({
   isVisible,
   lastMapNodeId,
   currentNodeId,
+  fit,
+  entry,
 }: StoryMinimapProps) => {
   const { root } = tree;
+  const isFloor = fit === "floor";
+  const isDescendEntry = entry === "descend" && !isFloor;
+  // Widen the fly-over canvas to viewportW/2 of slack per side when entering from
+  // the floor, so the root can actually be scrolled to the centre (the normal map
+  // is only 600px wide, which clamps the root off-centre in a wider viewport).
+  const [entryViewportW, setEntryViewportW] = useState(0);
+  // The selected sibling paints one beat after a descend so the map "wakes up"
+  // rather than popping a highlight in the handoff frame. Non-descend mounts
+  // start settled (no flash).
+  const [descendSettled, setDescendSettled] = useState(entry !== "descend");
   const coords = useCoords(root);
   const edges = useEdges(root);
   const viewportRef = useRef<HTMLDivElement>(null);
   const lastHighlightedNodeRef = useRef<string | null>(null);
+
+  // Floor camera measures its container so the whole tree can be fitted at
+  // scale ≤ 1 (shrink to fit, never magnify). Only used when isFloor.
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!isFloor || !viewportRef.current) return;
+    const el = viewportRef.current;
+    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isFloor]);
+
+  // Measure the viewport width for the descend-entry canvas padding, before paint
+  // (layout-effect setState flushes pre-paint, so no first-frame flash).
+  useLayoutEffect(() => {
+    if (!isDescendEntry || !viewportRef.current) return;
+    setEntryViewportW(viewportRef.current.clientWidth);
+  }, [isDescendEntry]);
+
+  // On a fresh descend, hold the selected-sibling highlight back a beat.
+  useEffect(() => {
+    if (!isDescendEntry) {
+      setDescendSettled(true);
+      return;
+    }
+    setDescendSettled(false);
+    const t = window.setTimeout(() => setDescendSettled(true), 150);
+    return () => window.clearTimeout(t);
+  }, [isDescendEntry]);
 
   // Determine node that matches current reader position for highlight
   const highlightedNode = (() => {
@@ -247,8 +309,11 @@ export const StoryMinimap = ({
     return node;
   })();
 
-  // Determine selected sibling (next depth)
+  // Determine selected sibling (next depth). On the floor there is no
+  // within-tree selection — the bloom is a specimen, not a live reader — so no
+  // child is painted "selected" (fixes the old lie that always greened child 0).
   const selectedSibling = (() => {
+    if (isFloor) return null;
     if (!highlightedNode.continuations?.length) return null;
     const idx = selectedOptions[currentDepth] ?? 0;
     return (
@@ -270,9 +335,14 @@ export const StoryMinimap = ({
 
   // Add padding around the tree
   const padding = LANE_WIDTH * 2;
+  // Descend-entry widens the canvas so there's slack to scroll the root to the
+  // viewport centre (the normal 600px canvas clamps it off-centre).
+  const entryPad = isDescendEntry
+    ? Math.max(padding, entryViewportW / 2)
+    : padding;
   const svgWidth = isSingleNode
     ? SINGLE_NODE_SVG_WIDTH
-    : Math.max(600, maxX - minX + padding * 2); // Ensure minimum width
+    : Math.max(600, maxX - minX + entryPad * 2); // Ensure minimum width
   const svgHeight = isSingleNode
     ? SINGLE_NODE_SVG_HEIGHT
     : Math.max(maxY + MAX_NODE_HEIGHT, ROW_HEIGHT * 4);
@@ -281,6 +351,32 @@ export const StoryMinimap = ({
   const centerX = svgWidth / 2;
   const treeCenter = (minX + maxX) / 2;
   const rootOffset = centerX - treeCenter;
+
+  // FLOOR CAMERA: frame the whole tree in a viewBox symmetric about the ROOT's
+  // x, so the root lands at the horizontal centre for every tree by arithmetic
+  // (not by scroll-chasing). Height pins the root near the top. The viewBox is
+  // grown to at least the container size so a small tree renders at scale 1
+  // (never magnified) while a big one shrinks to fit — and its aspect matches
+  // the container, so the tree fills width without letterboxing. In floor mode
+  // nodes render at their raw x (no rootOffset).
+  const effectiveRootOffset = isFloor ? 0 : rootOffset;
+  let floorViewBox: string | undefined;
+  if (isFloor) {
+    const rootX = coords[root.id]?.x ?? 0;
+    // Small top pad so the bloom's root hangs just under the dial's centred pill
+    // (reads as "blooms beneath it"); generous side pad keeps wide trees off the
+    // edges.
+    const topPad = 14;
+    const halfW = Math.max(rootX - minX, maxX - rootX) + padding;
+    const treeW = Math.max(2 * halfW, 1);
+    const treeH = Math.max(maxY + MAX_NODE_HEIGHT + topPad * 2, 1);
+    const cw = box?.w ?? treeW;
+    const ch = box?.h ?? treeH;
+    const scale = Math.min(1, cw / treeW, ch / treeH);
+    const vbW = cw / scale;
+    const vbH = ch / scale;
+    floorViewBox = `${rootX - vbW / 2} ${-topPad} ${vbW} ${vbH}`;
+  }
 
   // Track initial positioning so opening the map doesn't animate
   const hasPositionedRef = useRef(false);
@@ -294,6 +390,8 @@ export const StoryMinimap = ({
   // Position viewport to keep highlighted/selected in view
   // Use layout effect so the map appears already positioned on open
   useLayoutEffect(() => {
+    // The floor camera has no scrollable canvas — the viewBox does the framing.
+    if (isFloor) return;
     if (
       !viewportRef.current ||
       !highlightedNode ||
@@ -303,6 +401,21 @@ export const StoryMinimap = ({
     }
 
     const viewport = viewportRef.current;
+
+    // Descend-entry: open in the FLOOR'S frame — the root scrolled to the
+    // horizontal centre (where the dial pill was), tree top at the top. Skip the
+    // cursor-chasing dance so the handoff frame matches the floor exactly. Wait
+    // for the viewport width to be measured (which widens the canvas) before
+    // positioning, else we'd centre against the un-widened 600px canvas and clamp.
+    if (isDescendEntry && !hasPositionedRef.current) {
+      if (entryViewportW === 0) return;
+      hasPositionedRef.current = true;
+      const rootCanvasX = (coords[root.id]?.x ?? 0) + rootOffset;
+      viewport.scrollLeft = Math.max(0, rootCanvasX - viewport.clientWidth / 2);
+      viewport.scrollTop = 0;
+      return;
+    }
+
     const viewportRect = viewport.getBoundingClientRect();
 
     // A function to calculate the ideal scroll position to center a node (and its sibling)
@@ -406,19 +519,46 @@ export const StoryMinimap = ({
     isSingleNode,
     isVisible,
     lastMapNodeId,
+    isFloor,
+    isDescendEntry,
+    entryViewportW,
+    root.id,
   ]);
 
   return (
-    <div className="minimap-container view-fade">
+    <div
+      className={`minimap-container ${isDescendEntry ? "descend-entry" : "view-fade"}`}
+    >
       <div
         ref={viewportRef}
-        className={`minimap-viewport ${isSingleNode ? "single-node" : ""}`}
+        className={`minimap-viewport ${
+          isSingleNode && !isFloor ? "single-node" : ""
+        } ${isFloor ? "floor" : ""}`}
       >
         <div
-          className={isSingleNode ? "minimap-single-node-canvas" : undefined}
-          style={{ width: svgWidth, minWidth: "100%" }}
+          className={
+            isSingleNode && !isFloor ? "minimap-single-node-canvas" : undefined
+          }
+          style={
+            isFloor
+              ? { width: "100%", height: "100%" }
+              : { width: svgWidth, minWidth: "100%" }
+          }
         >
-          <svg width={svgWidth} height={svgHeight}>
+          <svg
+            {...(isFloor
+              ? {
+                  width: "100%",
+                  height: "100%",
+                  viewBox: floorViewBox,
+                  // Root pinned top-centre: the viewBox is built aspect-matched
+                  // to the container, but if they ever diverge the tree must
+                  // hang from the top (under the dial), not float to the middle.
+                  preserveAspectRatio: "xMidYMin meet",
+                  style: { display: "block" as const },
+                }
+              : { width: svgWidth, height: svgHeight })}
+          >
             {/* Define patterns for different node states */}
             <defs>
               {/* Subtle stripe pattern for ancestors - they've been read */}
@@ -433,7 +573,7 @@ export const StoryMinimap = ({
                 <circle cx="2" cy="2" r="0.4" fill="var(--secondary-color)"/>
               </pattern>
             </defs>
-            {isSingleNode ? (
+            {isSingleNode && !isFloor ? (
               <g className="minimap-single-node-affordance" aria-hidden="true">
                 <path
                   d={`M${centerX},${SINGLE_NODE_Y + singleNodeHeight - NODE_RADIUS / 2} L${centerX},154`}
@@ -477,8 +617,8 @@ export const StoryMinimap = ({
                 currentPath.some(node => node.id === from.id) &&
                 currentPath.some(node => node.id === to.id);
 
-              const ax = a.x + rootOffset;
-              const bx = b.x + rootOffset;
+              const ax = a.x + effectiveRootOffset;
+              const bx = b.x + effectiveRootOffset;
 
               // Start connector at bottom edge of parent pill (accounting for border radius)
               const startY = a.y + a.nodeHeight - NODE_RADIUS/2;
@@ -513,6 +653,9 @@ export const StoryMinimap = ({
                   fill="none"
                   strokeLinecap="square"
                   opacity={isAncestorEdge ? 0.8 : 0.4}
+                  // Floor camera shrinks big trees below scale 1 — keep the
+                  // hairline wires at their authored px so they don't go faint.
+                  vectorEffect={isFloor ? "non-scaling-stroke" : undefined}
                 />
               );
             })}
@@ -521,7 +664,8 @@ export const StoryMinimap = ({
             {Object.entries(coords).map(([id, c]) => {
               const node = c.path[c.path.length - 1];
               const isHighlighted = id === highlightedNode.id;
-              const isSelected = selectedSibling && id === selectedSibling.id;
+              const isSelected =
+                descendSettled && selectedSibling && id === selectedSibling.id;
               const isGenerating = inFlight.has(id);
               const isOnFavoritePath = currentPath.some(
                 (pathNode) => pathNode.id === id,
@@ -540,8 +684,8 @@ export const StoryMinimap = ({
                   {/* Draw node as an elongated pill/capsule shape */}
                   <rect
                     className={`minimap-node ${isGenerating ? "generating" : ""}`}
-                    x={c.x + rootOffset - NODE_WIDTH / 2}
-                    y={isSingleNode ? SINGLE_NODE_Y : c.y}
+                    x={c.x + effectiveRootOffset - NODE_WIDTH / 2}
+                    y={isSingleNode && !isFloor ? SINGLE_NODE_Y : c.y}
                     width={NODE_WIDTH}
                     height={c.nodeHeight}
                     rx={NODE_RADIUS}
@@ -561,6 +705,9 @@ export const StoryMinimap = ({
                     strokeWidth={
                       isHighlighted || isSelected ? 1.5 : 0.8
                     }
+                    // Same guard as the edges: node outlines stay legible when
+                    // the floor viewBox scales a wide tree down.
+                    vectorEffect={isFloor ? "non-scaling-stroke" : undefined}
                     opacity={
                       isHighlighted
                         ? 1  // Current - full brightness
@@ -583,9 +730,11 @@ export const StoryMinimap = ({
       </div>
       <Minibuffer
         text={
-          isSingleNode
+          isFloor
+            ? highlightedNode.text.split("\n")[0]
+            : isSingleNode
             ? "A to branch from here"
-            : selectedSibling
+            : descendSettled && selectedSibling
             ? selectedSibling.text.split("\n")[0]
             : highlightedNode.text.split("\n")[0]
         }

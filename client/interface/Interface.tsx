@@ -17,6 +17,7 @@ import { MenuScreen } from "./components/MenuScreen";
 import { NavigationDots } from "./components/NavigationDots";
 import { StoryText } from "./components/StoryText";
 import { StoryMinimap } from "./components/StoryMinimap";
+import { StoryForest } from "./components/StoryForest";
 import { useTheme, THEME_PRESETS } from "./components/ThemeToggle";
 import type {
   ThemeClass,
@@ -31,7 +32,7 @@ import { SettingsMenu } from "./menus/SettingsMenu";
 import { TreeListMenu } from "./menus/TreeListMenu";
 import { ModelsMenu } from "./menus/ModelsMenu";
 import { EditMenu, EDIT_CONTROL_EVENT } from "./menus/EditMenu";
-import { TurnActionsMenu } from "./menus/TurnActionsMenu";
+import { ActionMenu, type MenuAction } from "./menus/ActionMenu";
 import { InstallPrompt } from "./components/InstallPrompt";
 import ModeBar from "./components/ModeBar";
 import { Drawer, DRAWER_TABS } from "./components/Drawer";
@@ -105,6 +106,73 @@ const SETTINGS_ROW_LABELS = [
   "Author Name",
   "Authorship",
 ];
+
+// The focused-turn action set — the "second layer" contents, kept as DATA in a
+// stable order so it drives both the ActionMenu (labels) and the key handler
+// (cursor). Growing textile to act on other object types is another builder
+// like this one; the ActionMenu primitive and the key handling stay put.
+const TURN_ACTIONS = ["keep", "note", "edit"] as const;
+
+// What ⌫ does on a focused turn in the loom. "menu" = menu-first (⌫ opens the
+// action sheet; edit is a row inside it); "edit" = edit-first (⌫ jumps straight
+// into the editor). The owner is still deciding which; flip this ONE constant
+// to change the mapping — nothing else moves.
+const BACKSPACE_ON_TURN = "menu" as "menu" | "edit";
+
+// The FLOOR's per-loom action set. Same shape as TURN_ACTIONS — a stable order
+// that drives both the ActionMenu labels and the key handler. "open" is
+// redundant with A on the floor but stays so touch users who reached the menu
+// still have it. Kept lowercase to match the turn menu.
+const STORY_ACTIONS = ["open", "share", "export", "delete"] as const;
+const STORY_ACTION_MENU: MenuAction[] = STORY_ACTIONS.map((id) => ({
+  id,
+  label: id,
+}));
+
+// The FLOOR's own action set (SELECT on the floor) — verbs on the archive
+// itself, distinct from a loom's verbs (⌫). "sort" carries the live order so
+// the label doubles as the current state.
+const FLOOR_ACTIONS = ["new", "import", "sort", "share-index"] as const;
+
+function floorMenuActions(sort: StorySortOption): MenuAction[] {
+  return FLOOR_ACTIONS.map((id) => ({
+    id,
+    label:
+      id === "new"
+        ? "new loom"
+        : id === "import"
+          ? "import conversation"
+          : id === "sort"
+            ? `sort: ${sort}`
+            : "share index",
+  }));
+}
+
+/**
+ * One parameterized action-overlay — "the one door to act on whatever you're
+ * focused on." Every menu (turn / story / floor / delete-confirm) is just a
+ * descriptor: the ActionMenu component and the d-pad handling stay put, only
+ * the rows + what Enter does change. Actions are captured when the menu opens.
+ */
+interface Menu {
+  /** Sheet title (e.g. "TURN", "LOOM ACTIONS", "FLOOR", 'DELETE "…"?'). */
+  title: string;
+  /** Sheet hint; defaults to the standard move/choose/close line. */
+  hint?: string;
+  actions: MenuAction[];
+  onActivate: (index: number) => void;
+  /** Starting cursor row (e.g. delete-confirm starts on "keep"). */
+  initialCursor?: number;
+}
+
+const DEFAULT_MENU_HINT = "↕: MOVE • ↵: CHOOSE • START: CLOSE";
+
+function buildTurnActions(node: { kept?: boolean } | undefined): MenuAction[] {
+  return TURN_ACTIONS.map((id) => ({
+    id,
+    label: id === "keep" ? (node?.kept ? "un-keep" : "keep") : id,
+  }));
+}
 
 function useLyncSyncIndicator(): LyncSyncSnapshot {
   const [status, setStatus] = useState(() => getLyncSyncSnapshot());
@@ -195,8 +263,6 @@ export const GamepadInterface = () => {
   const {
     screen,
     setScreen,
-    selectedTurnAction,
-    setSelectedTurnAction,
     drawerTab,
     setDrawerTab,
     expandedModel,
@@ -218,7 +284,29 @@ export const GamepadInterface = () => {
   // Which tree projection (loom / map) is showing when no overlay is up.
   // Persists while the drawer or edit overlay is open, so closing just
   // restores the prior view — no stash/return ref needed.
-  const [projection, setProjection] = useState<"loom" | "map">("loom");
+  const [projection, setProjection] = useState<"loom" | "map" | "bin">("loom");
+  // "descend" only while the map was entered by dropping in from the floor, so
+  // that map opens in the floor's frame (continuous handoff). Cleared whenever we
+  // leave the map — the standalone map (START from loom) never sees it.
+  const [mapEntry, setMapEntry] = useState<"descend" | null>(null);
+  useEffect(() => {
+    if (projection !== "map") setMapEntry(null);
+  }, [projection]);
+  // Cursor across stories on the "shelf" (projection === "bin"), and the cursor
+  // in the per-story action menu (screen === "story-actions").
+  const [selectedShelfIndex, setSelectedShelfIndex] = useState(0);
+  // The active action-overlay (screen === "menu") and its cursor row. One door
+  // for turn / story / floor / delete-confirm — opened via openMenu().
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menuCursor, setMenuCursor] = useState(0);
+  const openMenu = useCallback(
+    (m: Menu) => {
+      setMenuCursor(m.initialCursor ?? 0);
+      setMenu(m);
+      setScreen("menu");
+    },
+    [setScreen],
+  );
   // When cursor is on the drawer's tab strip, Left/Right cycle tabs
   // and ArrowDown drops into the rows beneath.  ArrowUp from the
   // first row comes back up here.
@@ -416,31 +504,40 @@ export const GamepadInterface = () => {
     return newKey;
   }, [createStory, closeDrawer]);
 
-  const handleDeleteTree = useCallback(
+  // The actual deletion — no confirmation. Callers own the confirm UX (the
+  // drawer wraps it in window.confirm; the forest uses an in-idiom overlay).
+  const performDeleteStory = useCallback(
     async (key: string) => {
-      if (window.confirm(`Are you sure you want to delete "${key}"?`)) {
-        await deleteStory(key);
-        {
-          const meta = getStoryMeta();
-          if (meta[key]) {
-            delete meta[key];
-            setStoryMeta(meta);
-          }
+      await deleteStory(key);
+      {
+        const meta = getStoryMeta();
+        if (meta[key]) {
+          delete meta[key];
+          setStoryMeta(meta);
         }
+      }
 
-        // If we deleted the current tree, switch to another one
-        if (key === currentLoomId) {
-          const remaining = orderKeysReverseChronological(trees).filter(
-            (k) => k !== key
-          );
-          if (remaining.length > 0) {
-            setCurrentLoomId(remaining[0]);
-            touchStoryActive(remaining[0]);
-          }
+      // If we deleted the current tree, switch to another one
+      if (key === currentLoomId) {
+        const remaining = orderKeysReverseChronological(trees).filter(
+          (k) => k !== key
+        );
+        if (remaining.length > 0) {
+          setCurrentLoomId(remaining[0]);
+          touchStoryActive(remaining[0]);
         }
       }
     },
     [currentLoomId, deleteStory, trees, setCurrentLoomId]
+  );
+
+  const handleDeleteTree = useCallback(
+    async (key: string) => {
+      if (window.confirm(`Are you sure you want to delete "${key}"?`)) {
+        await performDeleteStory(key);
+      }
+    },
+    [performDeleteStory]
   );
 
   const handleExportTree = useCallback(
@@ -514,16 +611,20 @@ export const GamepadInterface = () => {
     [annotateCurrentNode, showImportNotice, setScreen],
   );
 
-  // Activate a row of the per-turn action menu: 0=keep 1=note 2=edit.
+  // Activate a row of the per-turn action menu by its stable action id.
   const activateTurnAction = useCallback(
     async (index: number) => {
-      if (index === 0) {
-        await handleKeepAction();
-        setScreen(null);
-      } else if (index === 1) {
-        setScreen("note");
-      } else {
-        setScreen("edit");
+      switch (TURN_ACTIONS[index]) {
+        case "keep":
+          await handleKeepAction();
+          setScreen(null);
+          break;
+        case "note":
+          setScreen("note");
+          break;
+        case "edit":
+          setScreen("edit");
+          break;
       }
     },
     [handleKeepAction, setScreen],
@@ -857,6 +958,113 @@ export const GamepadInterface = () => {
     }, 180);
   }, []);
 
+  // Run one action from the shelf's per-story menu (screen === "story-actions").
+  // Every branch reuses an existing story handler — the shelf just routes them
+  // through the one ActionMenu door instead of the drawer's scattered columns.
+  const activateStoryAction = useCallback(
+    (index: number) => {
+      const storyKey =
+        orderedKeys[Math.min(selectedShelfIndex, orderedKeys.length - 1)];
+      if (!storyKey) {
+        setScreen(null);
+        return;
+      }
+      switch (STORY_ACTIONS[index]) {
+        case "open":
+          touchStoryActive(storyKey);
+          setCurrentLoomId(storyKey);
+          setScreen(null);
+          setProjection("loom");
+          break;
+        case "share":
+          void handleShareStory(storyKey);
+          setScreen(null);
+          break;
+        case "export":
+          handleExportTree(storyKey);
+          setScreen(null);
+          break;
+        case "delete":
+          // Never delete the last story — mirror the drawer's guard. Open an
+          // in-idiom confirmation (NOT a native dialog); default the cursor to
+          // "keep" so a stray press can't delete.
+          if (orderedKeys.length > 1) {
+            openMenu({
+              title: "DELETE LOOM?",
+              hint: "↕: MOVE • ↵: CHOOSE • START: CANCEL",
+              actions: [
+                {
+                  id: "delete",
+                  label: `delete "${storyTitles[storyKey] ?? storyKey}"`,
+                },
+                { id: "keep", label: "keep it" },
+              ],
+              initialCursor: 1,
+              onActivate: (i) => {
+                if (i === 0 && orderedKeys.length > 1) {
+                  void performDeleteStory(storyKey);
+                }
+                setScreen(null);
+              },
+            });
+          } else {
+            setScreen(null);
+          }
+          break;
+      }
+    },
+    [
+      orderedKeys,
+      selectedShelfIndex,
+      handleShareStory,
+      handleExportTree,
+      openMenu,
+      performDeleteStory,
+      storyTitles,
+      setCurrentLoomId,
+      setScreen,
+      setProjection,
+    ]
+  );
+
+  // Run one action from the FLOOR's menu (SELECT on the floor) — verbs on the
+  // archive itself. All reuse the drawer's existing handlers, so the floor is a
+  // complete home without the drawer's scattered 2-D action grid.
+  const activateFloorAction = useCallback(
+    (index: number) => {
+      switch (FLOOR_ACTIONS[index]) {
+        case "new":
+          // Create + drop into the fresh loom, ready to write.
+          void handleNewTree();
+          setScreen(null);
+          setProjection("loom");
+          break;
+        case "import":
+          openConversationFilePicker();
+          setScreen(null);
+          break;
+        case "sort":
+          // Cycle the order and close, so the reshuffled floor is immediately
+          // visible (staying open would just hide the row you're reordering).
+          cycleStorySort(1);
+          setScreen(null);
+          break;
+        case "share-index":
+          void handleShareIndex();
+          setScreen(null);
+          break;
+      }
+    },
+    [
+      handleNewTree,
+      openConversationFilePicker,
+      cycleStorySort,
+      handleShareIndex,
+      setScreen,
+      setProjection,
+    ]
+  );
+
   const handleControlAction = useCallback(
     async (key: string) => {
       // EDIT overlay — EditMenu owns keyboard via its own window listener.
@@ -869,19 +1077,21 @@ export const GamepadInterface = () => {
         return;
       }
 
-      // TURN action menu (per-turn: keep / note / edit), opened by B (⌫) in the
-      // reading view. D-pad moves, A chooses, START/SELECT/B dismiss.
-      if (screen === "turn") {
+      // ACTION MENU — the one door (turn / story / floor / delete-confirm). The
+      // active Menu descriptor supplies the rows and what Enter does; the d-pad
+      // handling is identical for every menu, so it lives here once.
+      if (screen === "menu" && menu) {
+        const count = menu.actions.length;
         if (key === "ArrowUp") {
-          setSelectedTurnAction((i) => (i + 2) % 3);
+          setMenuCursor((i) => (i + count - 1) % count);
           return;
         }
         if (key === "ArrowDown") {
-          setSelectedTurnAction((i) => (i + 1) % 3);
+          setMenuCursor((i) => (i + 1) % count);
           return;
         }
         if (key === "Enter") {
-          void activateTurnAction(selectedTurnAction);
+          menu.onActivate(menuCursor);
           return;
         }
         if (key === "Escape" || key === "`" || key === "Backspace") {
@@ -966,6 +1176,88 @@ export const GamepadInterface = () => {
         return;
       }
 
+      // FLOOR (projection === "bin"): every loom a sibling root on the dial.
+      // ◄ ► dial the row (clamped — bonk at the ends), ↓ descends into the
+      // bloomed tree (map), A/↵ reads it (loom), ⌫ opens its action menu,
+      // ` acts on the floor itself, ↑ bonks (nothing above the floor). No k/n
+      // curation here — there is no focused turn on the floor.
+      if (projection === "bin") {
+        const count = orderedKeys.length;
+        if (count === 0) {
+          if (key === "Escape") setProjection("loom");
+          return;
+        }
+        const focused = () => orderedKeys[Math.min(selectedShelfIndex, count - 1)];
+        // Left/right DIAL the row of sibling roots — the selected root stays
+        // pinned to the center, the row slides beneath it. CLAMP (not wrap): a
+        // loom keeps its position in the row (spatial memory — leftmost is always
+        // leftmost), and dialing past an end bonks rather than lurching the whole
+        // row across the seam.
+        if (key === "ArrowLeft") {
+          if (selectedShelfIndex <= 0) {
+            triggerBonk(key);
+            return;
+          }
+          setSelectedShelfIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key === "ArrowRight") {
+          if (selectedShelfIndex >= count - 1) {
+            triggerBonk(key);
+            return;
+          }
+          setSelectedShelfIndex((i) => Math.min(count - 1, i + 1));
+          return;
+        }
+        // Down descends into the tree blooming beneath the selected root — stay
+        // in the map, now flying THIS story.
+        if (key === "ArrowDown") {
+          const storyKey = focused();
+          if (storyKey) {
+            touchStoryActive(storyKey);
+            setCurrentLoomId(storyKey);
+            setMapEntry("descend");
+            setProjection("map");
+          }
+          return;
+        }
+        // A reads it — drop into the loom.
+        if (key === "Enter") {
+          const storyKey = focused();
+          if (storyKey) {
+            touchStoryActive(storyKey);
+            setCurrentLoomId(storyKey);
+            setProjection("loom");
+          }
+          return;
+        }
+        if (key === "Backspace") {
+          // ⌫ acts on the focused LOOM: open / share / export / delete.
+          openMenu({
+            title: "LOOM ACTIONS",
+            actions: STORY_ACTION_MENU,
+            onActivate: activateStoryAction,
+          });
+          return;
+        }
+        if (key === "Escape") {
+          setProjection("loom");
+          return;
+        }
+        if (key === "`") {
+          // SELECT acts on the FLOOR itself: new / import / sort / share-index.
+          openMenu({
+            title: "FLOOR",
+            actions: floorMenuActions(storySort),
+            onActivate: activateFloorAction,
+          });
+          return;
+        }
+        // Up — nothing above the floor.
+        triggerBonk(key);
+        return;
+      }
+
       // KEEP / ANNOTATE the current turn — the curation gestures. Available in
       // both tree projections (loom + map); they never navigate, so they sit
       // ahead of the projection-specific handling below.
@@ -1013,6 +1305,13 @@ export const GamepadInterface = () => {
           return;
         }
         if (!(await handleStoryNavigation(key))) {
+          // Up past the root rises to the forest floor — the map's top zoom
+          // level, where this tree becomes one root among its siblings.
+          if (key === "ArrowUp" && currentDepth === 0) {
+            setSelectedShelfIndex(Math.max(0, orderedKeys.indexOf(currentLoomId)));
+            setProjection("bin");
+            return;
+          }
           triggerBonk(key);
         }
         return;
@@ -1028,25 +1327,52 @@ export const GamepadInterface = () => {
         return;
       }
       if (key === "Backspace") {
-        setSelectedTurnAction(0);
-        setScreen("turn");
+        // ⌫ acts on the focused TURN. Menu-first vs edit-first is an open
+        // owner call — BACKSPACE_ON_TURN (top of file) is the one-line flip.
+        if (BACKSPACE_ON_TURN === "edit") {
+          setScreen("edit");
+          return;
+        }
+        openMenu({
+          title: "TURN",
+          actions: buildTurnActions(getCurrentPath()[currentDepth]),
+          onActivate: (i) => void activateTurnAction(i),
+        });
         return;
       }
       if (!(await handleStoryNavigation(key))) {
+        // Up past the top of a story rises onto the shelf — the root bin where
+        // stories hang as siblings. The one inert loom gesture, repurposed.
+        if (key === "ArrowUp" && currentDepth === 0) {
+          setSelectedShelfIndex(Math.max(0, orderedKeys.indexOf(currentLoomId)));
+          setProjection("bin");
+          return;
+        }
         triggerBonk(key);
       }
     },
     [
+      activateStoryAction,
       activateTurnAction,
       closeDrawer,
       cursorOnTabs,
+      currentDepth,
       currentLoomId,
       drawerTab,
       expandedModel,
       openNote,
       handleKeepAction,
-      selectedTurnAction,
-      setSelectedTurnAction,
+      activateFloorAction,
+      menu,
+      menuCursor,
+      openMenu,
+      selectedShelfIndex,
+      storySort,
+      setCurrentLoomId,
+      setMenuCursor,
+      setProjection,
+      setSelectedShelfIndex,
+      getCurrentPath,
       handleStoryNavigation,
       handleSubmitModel,
       highlightedNode,
@@ -1093,6 +1419,10 @@ export const GamepadInterface = () => {
 
   // True only when the loom view is the visible, unobstructed surface.
   const onLoom = screen === null && projection === "loom";
+  // The action menu is a bottom SHEET overlaid on the view it acts on — the
+  // loom / map / floor stays rendered and visible underneath, so you can still
+  // see what you're acting on (owner ruling: overlay, don't replace).
+  const sheetOpen = screen === "menu" && menu !== null;
 
   // Scroll to current depth when navigation changes.  Center on the
   // cursor span (path[currentDepth + 1]) so the user's eye lands on the
@@ -1156,8 +1486,11 @@ export const GamepadInterface = () => {
 
   // Removed LOOM scroll preservation to keep behavior simple and reliable
 
+  // The action sheet OVERLAYS the view instead of replacing it, so the mode
+  // bar keeps narrating the view underneath (loom / map / floor) while the
+  // sheet carries its own title + hint. Resolve the mode as if no menu is up.
   const currentMode = getRegisteredMode({
-    screen,
+    screen: screen === "menu" ? null : screen,
     projection,
     drawerTab,
     cursorOnTabs,
@@ -1343,7 +1676,7 @@ export const GamepadInterface = () => {
                 </MenuScreen>
               ) : null}
             </Drawer>
-          ) : projection === "map" && screen === null ? (
+          ) : projection === "map" && (screen === null || sheetOpen) ? (
             <StoryMinimap
               tree={storyTree}
               currentDepth={currentDepth}
@@ -1365,9 +1698,33 @@ export const GamepadInterface = () => {
                   }
                 });
               }}
-              isVisible={projection === "map" && screen === null}
+              isVisible={projection === "map" && (screen === null || sheetOpen)}
               lastMapNodeId={lastMapNodeId}
               currentNodeId={highlightedNode.id}
+              entry={mapEntry ?? undefined}
+            />
+          ) : projection === "bin" && (screen === null || sheetOpen) ? (
+            <StoryForest
+              // orderedKeys is derived from `trees`, so every id has a tree.
+              stories={orderedKeys.map((id) => ({
+                id,
+                title: storyTitles[id] ?? id,
+                tree: trees[id]!,
+                isCurrent: id === currentLoomId,
+              }))}
+              selected={selectedShelfIndex}
+              onFocus={(index) => setSelectedShelfIndex(index)}
+              onDescend={(index) => {
+                const storyKey = orderedKeys[index];
+                if (storyKey) {
+                  touchStoryActive(storyKey);
+                  setCurrentLoomId(storyKey);
+                  setMapEntry("descend");
+                  // Descend into the tree that's blooming beneath the root —
+                  // stay in the map, now flying THIS story.
+                  setProjection("map");
+                }
+              }}
             />
           ) : screen === "edit" ? (
             <MenuScreen>
@@ -1400,14 +1757,6 @@ export const GamepadInterface = () => {
                 onCancel={() => setScreen(null)}
               />
             </MenuScreen>
-          ) : screen === "turn" ? (
-            <MenuScreen>
-              <TurnActionsMenu
-                node={getCurrentPath()[currentDepth]}
-                selected={selectedTurnAction}
-                onSelect={(index) => void activateTurnAction(index)}
-              />
-            </MenuScreen>
           ) : screen === "note" ? (
             <MenuScreen>
               <EditMenu
@@ -1420,9 +1769,15 @@ export const GamepadInterface = () => {
             </MenuScreen>
           ) : null}
 
-          {/* Keep LOOM mounted; hide when a menu is active */}
+          {/* Keep LOOM mounted; hide under the full-screen overlays (edit /
+              note / drawer) but stay VISIBLE under the bottom action sheet. */}
           <div
-            style={{ display: onLoom ? "flex" : "none" }}
+            style={{
+              display:
+                onLoom || (sheetOpen && projection === "loom")
+                  ? "flex"
+                  : "none",
+            }}
             className="flex-1 flex flex-col min-h-0 overflow-hidden"
           >
             <StoryText
@@ -1495,7 +1850,7 @@ export const GamepadInterface = () => {
                   </span>
                 );
               }
-              if (screen === "edit" || screen === "turn" || screen === "note") {
+              if (screen === "edit" || screen === "menu" || screen === "note") {
                 return isOffline ? (
                   <span className="text-theme-focused text-sm">⚡ Offline</span>
                 ) : null;
@@ -1524,7 +1879,13 @@ export const GamepadInterface = () => {
                 </>
               );
             })()}
-            {onLoom && projection === "loom" ? (
+            {onLoom &&
+            projection === "loom" &&
+            !error &&
+            !importNotice &&
+            !emptyGeneration ? (
+              // Yield the strip to a transient notice ("Note saved ✓" etc.) — the
+              // centered notice and this left-pinned cluster otherwise overlap.
               <div className="story-focus-cluster">
                 <AuthorshipIndicator
                   node={getCurrentPath()[getCurrentPath().length - 1]}
@@ -1543,6 +1904,33 @@ export const GamepadInterface = () => {
             ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />
           </div>
+
+          {/* ACTION SHEET — the one action-menu door, drawn as a drawer rising
+              from the bottom edge by the controls. It OVERLAYS the loom / map /
+              floor (still visible above it) instead of replacing the screen,
+              and carries its own title + hint so the ModeBar keeps naming the
+              view you were on. */}
+          {sheetOpen && menu ? (
+            <div
+              className="action-sheet"
+              role="dialog"
+              aria-label={menu.title}
+              data-testid="action-sheet"
+            >
+              <div className="action-sheet-bar">
+                <strong className="action-sheet-title">{menu.title}</strong>
+                <span className="action-sheet-hint">
+                  {menu.hint ?? DEFAULT_MENU_HINT}
+                </span>
+              </div>
+              <ActionMenu
+                actions={menu.actions}
+                selected={menuCursor}
+                onSelect={(index) => menu.onActivate(index)}
+                ariaLabel={menu.title}
+              />
+            </div>
+          ) : null}
         </section>
 
         {/* Controls */}

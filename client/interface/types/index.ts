@@ -161,10 +161,10 @@ export interface ActiveControls {
  *   - "drawer" : configuration drawer with tabs (settings / models / stories)
  *   - "edit"   : full-screen text edit overlay on the current node
  */
-export type Screen = "drawer" | "edit" | "turn" | "note" | null;
+export type Screen = "drawer" | "edit" | "menu" | "note" | null;
 
 /** Which projection of the tree is visible when no overlay is open. */
-export type Projection = "loom" | "map";
+export type Projection = "loom" | "map" | "bin";
 
 /** Which tab is active in the configuration drawer. */
 export type DrawerTab = "settings" | "models" | "stories";

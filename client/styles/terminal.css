@@ -284,6 +284,8 @@ html, body {
   width: 100%;
   background: var(--theme-background);
   box-sizing: border-box;
+  /* Anchor for the bottom action-sheet overlay. */
+  position: relative;
 }
 
 .terminal-screen.nav-bonk {
@@ -830,6 +832,17 @@ html, body {
   width: 100%;
   min-height: 0;
   flex: 1;
+}
+
+/* On a descend from the floor, the selected sibling's highlight fades in a beat
+   late (the map "wakes up") instead of popping in the handoff frame. */
+.minimap-container.descend-entry .minimap-node {
+  transition:
+    fill 160ms ease,
+    opacity 160ms ease;
+}
+
+.minimap-container {
   /* CSS variables for SVG theming.  --primary-color is the "selected"
      node fill — intentionally bound to the subdued primary so the map's
      selected node reads the same value as every other focus highlight
@@ -842,6 +855,84 @@ html, body {
   --border-color: var(--theme-border);
 }
 
+/* --- The forest floor: stories as sibling roots, the map's top zoom level.
+   A dial (selected root pinned to center, the row slides beneath it) over the
+   selected story's blooming silhouette. --- */
+.story-forest {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The dial strip: a row of root-pills that slides under a fixed centre. No
+   border, no marker line, no titles — the filled centred pill (and the bloom's
+   root directly below it) IS the focal point. Pills read as the map's nodes, so
+   the floor looks like the map one zoom level up. Root theming pulled from the
+   same values .minimap-container uses. */
+.story-forest-dial {
+  position: relative;
+  overflow: hidden;
+  height: 3.5rem;
+  flex: none;
+  --pill-stroke: var(--theme-text);
+  --pill-current: var(--theme-background-modal);
+  --pill-focus: var(--theme-focused-foreground-subdued);
+  --pill-empty: var(--theme-background);
+}
+
+.story-forest-row {
+  position: absolute;
+  left: 50%;
+  bottom: 0.6rem; /* baseline the skyline sits on */
+  display: flex;
+  align-items: flex-end;
+  transition: transform 180ms ease;
+}
+
+.story-forest-cell {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  /* Full-height transparent tap target: the visible pill may be only 16px
+     tall, but a thumb gets the whole strip above the baseline. */
+  height: 2.9rem;
+}
+
+.story-forest-pill {
+  display: block;
+  width: 14px;
+  border: 1px solid var(--pill-stroke);
+  border-radius: 2px;
+  background: var(--pill-empty);
+  opacity: 0.4;
+}
+
+/* current = the loom you rose from (map's "current" treatment); selected =
+   the dialed/centred loom (map's "selected" treatment). selected wins when both. */
+.story-forest-cell.current .story-forest-pill {
+  background: var(--pill-current);
+  opacity: 1;
+}
+.story-forest-cell.selected .story-forest-pill {
+  background: var(--pill-focus);
+  border-width: 1.5px;
+  opacity: 1;
+}
+
+.story-forest-bloom {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 .minimap-viewport {
   flex: 1;
   overflow: auto;
@@ -851,6 +942,13 @@ html, body {
 }
 
 .minimap-viewport::-webkit-scrollbar { display: none; }
+
+/* Floor camera: no scroll, no padding — the viewBox frames the whole tree and
+   the svg fills the box. The specimen fits by construction, so nothing clips. */
+.minimap-viewport.floor {
+  overflow: hidden;
+  padding: 0;
+}
 
 .minimap-viewport.single-node {
   display: grid;
@@ -908,6 +1006,78 @@ html, body {
   border-radius: 3px;
 }
 
+
+/* ===== ACTION SHEET =====
+ * The one action-menu door, drawn as a drawer rising from the bottom edge of
+ * the inner viewport (owner ruling: the controls are by the bottom, and the
+ * view you were on stays visible above it — no full-screen air). Sized to its
+ * rows, capped so the story still peeks over it on short screens. Theme vars
+ * only; single grid size — hierarchy is weight + muting, never font size. */
+.action-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  max-height: 60%;
+  background: var(--theme-background);
+  border-top: 2px solid var(--theme-text);
+  box-sizing: border-box;
+  animation: action-sheet-rise 140ms ease-out;
+}
+
+@keyframes action-sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-sheet {
+    animation: none;
+  }
+}
+
+/* Same grammar as the mode bar (bold title left, muted hint right), so the
+   sheet reads as another strip of the same machine, not a new widget. */
+.action-sheet-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5ch;
+  padding: 0.75ch 1.25ch;
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.action-sheet-title {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.action-sheet-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+/* Content-sized, not flex-grown: the sheet hugs its rows (no air) and only
+   scrolls when the row list outgrows the cap. */
+.action-sheet .menu-content {
+  flex: 0 1 auto;
+  overflow-y: auto;
+  padding-bottom: 0.5rem;
+}
 
 /* Selection conventions:
  *   .menu-item.selected           -> solid fill with focused-subdued (settings, models)

@@ -3,8 +3,9 @@ import type { DrawerTab, Projection, Screen } from "../types";
 export type ModeId =
   | "loom"
   | "map"
+  | "bin"
   | "edit"
-  | "turn"
+  | "menu"
   | "note"
   | "drawer-tabs"
   | "drawer-settings"
@@ -41,10 +42,14 @@ export const registeredModes: RegisteredMode[] = [
     matches: ({ screen }) => screen === "note",
   },
   {
-    id: "turn",
-    title: "TURN",
+    // One entry for every action-overlay. At runtime the action SHEET carries
+    // the active Menu descriptor's title/hint itself, and Interface resolves
+    // the mode bar as if no menu were up (the sheet overlays the view); this
+    // entry remains for callers that ask about screen "menu" directly.
+    id: "menu",
+    title: "MENU",
     hint: "↕: MOVE • ↵: CHOOSE • START: CLOSE",
-    matches: ({ screen }) => screen === "turn",
+    matches: ({ screen }) => screen === "menu",
   },
   {
     id: "model-editor",
@@ -89,9 +94,18 @@ export const registeredModes: RegisteredMode[] = [
   {
     id: "loom",
     title: "LOOM",
+    // No "↑: LOOMS" here: it overflowed the bar (hiding SELECT: CONFIG) and is
+    // only true at the root — ↑ climbs the tree at depth. Rising to the floor
+    // wants a root-contextual hint instead (tracked separately).
     hint: "↵: GENERATE • ⌫: ACTIONS • START: MAP • SELECT: CONFIG",
     matches: ({ screen, projection }) =>
       screen === null && projection === "loom",
+  },
+  {
+    id: "bin",
+    title: "LOOMS",
+    hint: "◄►: DIAL • ↓: FLY • ↵: READ • ⌫: ACTIONS • START: BACK",
+    matches: ({ screen, projection }) => screen === null && projection === "bin",
   },
 ];
 
