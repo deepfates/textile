@@ -29,6 +29,8 @@ bun.lockb
 .env
 
 scripts/parity/shots/
+atlas/out/
+atlas/index.html
 .claude/
 .data/
 test-results/
