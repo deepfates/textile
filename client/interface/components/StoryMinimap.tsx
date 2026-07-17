@@ -320,7 +320,10 @@ export const StoryMinimap = ({
   let floorViewBox: string | undefined;
   if (isFloor) {
     const rootX = coords[root.id]?.x ?? 0;
-    const topPad = padding;
+    // Small top pad so the bloom's root hangs just under the dial's centred pill
+    // (reads as "blooms beneath it"); generous side pad keeps wide trees off the
+    // edges.
+    const topPad = 14;
     const halfW = Math.max(rootX - minX, maxX - rootX) + padding;
     const treeW = Math.max(2 * halfW, 1);
     const treeH = Math.max(maxY + MAX_NODE_HEIGHT + topPad * 2, 1);
