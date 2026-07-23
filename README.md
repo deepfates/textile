@@ -45,11 +45,50 @@ It connects to [OpenRouter](https://openrouter.ai/), so you can use whatever mod
 |-----|--------|
 | Arrows | Navigate the tree |
 | Enter | Generate |
-| Backspace | Edit current node |
+| Backspace | Open actions for the current node |
 | Escape | Toggle minimap |
 | ` | Open settings |
 
 Same mappings on the touchscreen d-pad.
+
+## Design constraints
+
+textile is a small, tactile explorer for branching looms, including stories,
+conversations, and other Lync histories. It is not a general collaboration
+dashboard. Lync owns portable append-only interchange; textile makes one path,
+its nearby alternatives, and the shape of the larger tree legible.
+
+Keep these constraints when changing the interface:
+
+- **One monospace size, one character grid.** Hierarchy comes from position,
+  spacing, and colour—not smaller captions, badges, or extra type scales. The
+  only deliberate exceptions are the enlarged glyphs inside the physical
+  gamepad buttons.
+- **One grammar per projection.** Loom, map, floor, and menu may map the d-pad
+  differently, but the mapping does not change contextually within a
+  projection. START and SELECT move between projections rather than adding
+  more controls.
+- **The existing map is deliberate.** Preserve its node geometry and layout.
+  Camera fitting and containment may change when needed; the node
+  visualization itself is not an open redesign surface.
+- **The floor is a spatial dial.** Loom roots retain their order and move under
+  a fixed centre; the selected root blooms in place. Pill height encodes loom
+  size. The dial clamps and bonks at its ends instead of wrapping, preserving
+  spatial memory.
+- **Actions use one bottom sheet.** The focused loom, map, or floor remains
+  visible while its action menu rises from the bottom of the inner viewport.
+  Action sets are data rendered by the shared `ActionMenu`, not separate
+  full-screen menus.
+- **Durable authorship is not presence.** Per-turn actor/controller provenance
+  and coauthored Lync histories are part of the document. A who's-here roster,
+  live cursors, typing indicators, Automerge presence, and CRDT collaboration
+  are not part of textile's product direction.
+- **Nothing important fails silently.** Imports, saves, deletes, exports, and
+  generation failures should report their outcome in the existing interface
+  idiom; do not fall back to native prompt or confirmation dialogs.
+
+The controls remain bottom-anchored and mobile-first. Add expressive range by
+composing the existing projections and verbs, not by accumulating chrome.
 
 ## Running locally
 
