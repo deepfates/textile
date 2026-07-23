@@ -6,6 +6,9 @@ Textile opens raw `.lync` event unions directly. Its reader follows only the
 first parent as a tree, while retaining source IDs, extra DAG parents, and
 Curare cluster annotations. Keeps export as standard `lync/annotation`
 selection events for Splice.
+Unsafe unions (damaged or garbage lines, ID conflicts, missing parents, or graph
+cycles) fail closed with concrete reasons. Accepted nonconforming events remain
+readable and carry their warnings on the focused turn.
 
 To verify the seam against current source checkouts (nothing is published):
 

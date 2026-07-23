@@ -413,7 +413,11 @@ export const GamepadInterface = () => {
           result.turnCount === 1 ? "turn" : "turns"
         }${
           result.kind === "raw-lync"
-            ? ` · ${result.annotationCount ?? 0} annotations · ${result.diagnosticCount ?? 0} diagnostics`
+            ? ` · ${result.annotationCount ?? 0} annotations${
+                result.nonconformingCount
+                  ? ` · ${result.nonconformingCount} nonconforming (${result.warnings?.join("; ")})`
+                  : " · conforming"
+              }`
             : ""
         }`,
       );

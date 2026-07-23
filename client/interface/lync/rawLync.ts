@@ -1,4 +1,8 @@
-import { parseLyncFiles, type LyncEventBody } from "@deepfates/lync/events";
+import {
+  parseLyncFiles,
+  type LyncEventBody,
+  type LyncParseResult,
+} from "@deepfates/lync/events";
 import type { ConversationLoomSnapshot, ConversationTurnMeta } from "./storyRuntime";
 import type { RawLyncTag } from "../types";
 
@@ -6,7 +10,8 @@ export interface RawLyncProjection {
   snapshot: ConversationLoomSnapshot;
   sourceEventCount: number;
   annotationCount: number;
-  diagnosticCount: number;
+  nonconformingCount: number;
+  warnings: string[];
 }
 
 /**
@@ -22,6 +27,8 @@ export function projectRawLyncFile(
 ): RawLyncProjection {
   const bytes = new TextEncoder().encode(text);
   const parsed = parseLyncFiles([{ file: filename, bytes }]);
+  assertSafeProjection(parsed);
+  const nonconforming = parsed.lines.filter((line) => line.class === "nonconforming");
   const eligible = new Set(parsed.viewEligibleIds);
   const events = parsed.lines
     .map((line) => line.event)
@@ -36,6 +43,11 @@ export function projectRawLyncFile(
   }
 
   const contentIds = new Set(content.map((event) => event.id));
+  const warningsById = new Map(
+    nonconforming.flatMap((line) =>
+      line.id ? [[line.id, line.nonconformingReasons ?? [line.reason]] as const] : [],
+    ),
+  );
   const tagsByTarget = clusterTagsByTarget(annotations);
   const selectedIds = selectedSourceIds(annotations);
   const virtualId = `textile-raw-root:${content[0]!.id}`;
@@ -66,6 +78,7 @@ export function projectRawLyncFile(
       extraParentIds: event.parents.slice(1),
       rawTags: tagsByTarget.get(event.id) ?? [],
       sourceSelected: selectedIds.has(event.id),
+      sourceWarnings: warningsById.get(event.id) ?? [],
     };
     turns.push({
       id: event.id,
@@ -88,10 +101,45 @@ export function projectRawLyncFile(
     },
     sourceEventCount: content.length,
     annotationCount: annotations.length,
-    diagnosticCount: parsed.lines.filter(
-      (line) => line.class !== "accepted" || line.nonconformingReasons?.length,
-    ).length,
+    nonconformingCount: nonconforming.length,
+    warnings: nonconforming.map(
+      (line) => `${line.file}:${line.line} nonconforming: ${line.reason}`,
+    ),
   };
+}
+
+/** Refuse to build a plausible-looking partial tree from an unsafe union. */
+function assertSafeProjection(parsed: LyncParseResult): void {
+  const issues: string[] = [];
+  for (const line of parsed.lines) {
+    if (["garbage", "damaged", "conflict-variant"].includes(line.class)) {
+      issues.push(`${line.file}:${line.line} ${line.class}: ${line.reason}`);
+    }
+  }
+  for (const pending of parsed.pending) {
+    issues.push(
+      `${pending.file}:${pending.line} pending ${pending.id}: missing parent ${pending.missingParent}`,
+    );
+  }
+  if (parsed.pendingOverflowCount > 0) {
+    issues.push(`${parsed.pendingOverflowCount} pending events exceeded the parser limit`);
+  }
+  for (const obstacle of parsed.graphDiagnostics) {
+    if (obstacle.class === "cycle") {
+      issues.push(`graph cycle: ${(obstacle.ids ?? []).join(" -> ") || "unknown events"}`);
+    } else if (obstacle.class === "dangling") {
+      issues.push(`graph dangling: ${obstacle.id ?? "event"} needs ${obstacle.missing ?? "a parent"}`);
+    } else {
+      issues.push(`graph unavailable due to conflict: ${obstacle.id ?? "unknown event"}`);
+    }
+  }
+  const unique = [...new Set(issues)];
+  if (unique.length === 0) return;
+  const shown = unique.slice(0, 6);
+  const more = unique.length > shown.length ? `\n- …and ${unique.length - shown.length} more` : "";
+  throw new Error(
+    `Cannot import .lync safely; repair or remove these records:\n- ${shown.join("\n- ")}${more}`,
+  );
 }
 
 function eventTime(event: LyncEventBody): number {

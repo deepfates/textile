@@ -33,6 +33,7 @@ export interface ReadableTurnMeta {
   extraParentIds?: string[];
   rawTags?: import("../types").RawLyncTag[];
   sourceSelected?: boolean;
+  sourceWarnings?: string[];
 }
 
 /**
@@ -343,5 +344,6 @@ function turnToStoryNode(turn: ReadableTurn): StoryNode {
     sourceParents: meta?.sourceParents,
     extraParentIds: meta?.extraParentIds,
     rawTags: meta?.rawTags,
+    sourceWarnings: meta?.sourceWarnings,
   };
 }

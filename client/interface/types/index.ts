@@ -73,6 +73,8 @@ export interface StoryNode {
   /** DAG parents after parents[0], which alone defines Textile navigation. */
   extraParentIds?: string[];
   rawTags?: RawLyncTag[];
+  /** Protocol conformance warnings carried on this exact source event. */
+  sourceWarnings?: string[];
   /** The newest positive Textile keep event, used as the selection event id. */
   keepMark?: { id: string; createdAt: number; actor?: string; via?: string };
 }

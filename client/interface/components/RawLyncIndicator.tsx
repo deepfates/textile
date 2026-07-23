@@ -5,11 +5,13 @@ export function RawLyncIndicator({ node }: { node: StoryNode | undefined }) {
   if (!node?.sourceId) return null;
   const extraParents = node.extraParentIds ?? [];
   const tags = node.rawTags ?? [];
+  const warnings = node.sourceWarnings ?? [];
   const detail = [
     `source ${node.sourceId}`,
     node.sourceKind,
     node.sourceParents?.length ? `parents: ${node.sourceParents.join(", ")}` : "root event",
     tags.length ? `tags: ${tags.map((tag) => tag.tag).join(", ")}` : null,
+    warnings.length ? `nonconforming: ${warnings.join(", ")}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -21,6 +23,7 @@ export function RawLyncIndicator({ node }: { node: StoryNode | undefined }) {
           ? ` · +${extraParents.length} parent${extraParents.length === 1 ? "" : "s"}`
           : ""}
         {tags.length ? ` · ${tags.map((tag) => tag.tag).join(", ")}` : ""}
+        {warnings.length ? ` · ⚠ ${warnings.length}` : ""}
       </span>
     </span>
   );

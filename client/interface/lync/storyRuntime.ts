@@ -445,6 +445,7 @@ export interface ConversationTurnMeta {
   extraParentIds?: string[];
   rawTags?: RawLyncTag[];
   sourceSelected?: boolean;
+  sourceWarnings?: string[];
 }
 /** A conversation loom's own meta: marks the profile + carries a title. */
 export interface ConversationLoomMeta {
@@ -530,7 +531,8 @@ export interface ImportedConversation {
   turnCount: number;
   kind?: "conversation" | "raw-lync";
   annotationCount?: number;
-  diagnosticCount?: number;
+  nonconformingCount?: number;
+  warnings?: string[];
 }
 
 /**
@@ -596,7 +598,8 @@ export async function importRawLyncText(
     kind: "raw-lync",
     turnCount: projection.sourceEventCount,
     annotationCount: projection.annotationCount,
-    diagnosticCount: projection.diagnosticCount,
+    nonconformingCount: projection.nonconformingCount,
+    warnings: projection.warnings,
   };
 }
 
