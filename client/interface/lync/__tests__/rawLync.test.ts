@@ -115,6 +115,27 @@ describe("raw .lync projection", () => {
       "unknown top-level field mystery",
     ]);
   });
+
+  it("collapses unreadable tool steps to the nearest readable first-parent ancestor", () => {
+    const a = "0197e6a0-4a09-7000-8000-000000000061";
+    const tool = "0197e6a0-4a09-7000-8000-000000000062";
+    const b = "0197e6a0-4a09-7000-8000-000000000063";
+    const input = [
+      event(a, [], "question"),
+      {
+        ...event(tool, [a], "unused"),
+        payload: { message: { content: [{ type: "tool_use", name: "read" }] } },
+      },
+      event(b, [tool], "answer"),
+    ]
+      .map(JSON.stringify)
+      .join("\n");
+    const projection = projectRawLyncFile(`${input}\n`, "tools.lync");
+    const turns = new Map(projection.snapshot.turns.map((turn) => [turn.id, turn]));
+    expect(projection.sourceEventCount).toBe(2);
+    expect(turns.get(b)?.parentId).toBe(a);
+    expect(turns.get(b)?.meta.sourceParents).toEqual([tool]);
+  });
 });
 
 function flatten(node: import("../../types").StoryNode): import("../../types").StoryNode[] {

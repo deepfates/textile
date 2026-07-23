@@ -43,6 +43,13 @@ export function projectRawLyncFile(
   }
 
   const contentIds = new Set(content.map((event) => event.id));
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const navigationParents = new Map(
+    content.map((event) => [
+      event.id,
+      nearestReadableFirstParent(event, eventsById, contentIds),
+    ]),
+  );
   const warningsById = new Map(
     nonconforming.flatMap((line) =>
       line.id ? [[line.id, line.nonconformingReasons ?? [line.reason]] as const] : [],
@@ -65,9 +72,8 @@ export function projectRawLyncFile(
     },
   ];
 
-  for (const event of orderByFirstParent(content, contentIds)) {
-    const firstParent = event.parents[0];
-    const navigationParent = firstParent && contentIds.has(firstParent) ? firstParent : virtualId;
+  for (const event of orderByNavigationParent(content, navigationParents)) {
+    const navigationParent = navigationParents.get(event.id) ?? virtualId;
     const meta: ConversationTurnMeta = {
       role: rawRole(event),
       author: event.author.actor,
@@ -210,14 +216,31 @@ function selectedSourceIds(events: LyncEventBody[]): Set<string> {
   return selected;
 }
 
-function orderByFirstParent(events: LyncEventBody[], ids: Set<string>): LyncEventBody[] {
+/** Collapse non-readable tool steps without changing which first-parent chain is followed. */
+function nearestReadableFirstParent(
+  event: LyncEventBody,
+  eventsById: Map<string, LyncEventBody>,
+  readableIds: Set<string>,
+): string | undefined {
+  let parent = event.parents[0];
+  while (parent) {
+    if (readableIds.has(parent)) return parent;
+    parent = eventsById.get(parent)?.parents[0];
+  }
+  return undefined;
+}
+
+function orderByNavigationParent(
+  events: LyncEventBody[],
+  navigationParents: Map<string, string | undefined>,
+): LyncEventBody[] {
   const pending = new Map(events.map((event) => [event.id, event]));
   const ordered: LyncEventBody[] = [];
   const emitted = new Set<string>();
   while (pending.size > 0) {
     const ready = [...pending.values()].filter((event) => {
-      const parent = event.parents[0];
-      return !parent || !ids.has(parent) || emitted.has(parent);
+      const parent = navigationParents.get(event.id);
+      return !parent || emitted.has(parent);
     });
     if (ready.length === 0) {
       throw new Error("Cannot project .lync first-parent navigation: the source contains a cycle.");
