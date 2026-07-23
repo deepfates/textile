@@ -355,7 +355,7 @@ export const TreeListMenu = ({
           hasImport ? (
             <div className="story-action-cluster" role="group">
               <StoryActionButton
-                label="Import conversation"
+                label="Import Lync"
                 icon={<ImportIcon />}
                 selected={selectedIndex === 1 && selectedColumn === 1}
                 onClick={(event) => {

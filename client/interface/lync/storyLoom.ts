@@ -26,6 +26,13 @@ export interface ReadableTurnMeta {
   revises?: TurnId;
   /** Present only on `role: "mark"` turns — the kept state this swipe records. */
   kept?: boolean;
+  rawVirtual?: boolean;
+  sourceId?: string;
+  sourceKind?: string;
+  sourceParents?: string[];
+  extraParentIds?: string[];
+  rawTags?: import("../types").RawLyncTag[];
+  sourceSelected?: boolean;
 }
 
 /**
@@ -184,7 +191,17 @@ export async function projectStoryTree(
     // Append-only toggle: childrenOf returns marks in append order, so the LAST
     // mark is the newest — its kept state wins. Nothing is deleted.
     const latestMark = markTurns.at(-1);
-    if (latestMark) parent.kept = latestMark.meta?.kept === true;
+    if (latestMark) {
+      parent.kept = latestMark.meta?.kept === true;
+      parent.keepMark = parent.kept
+        ? {
+            id: latestMark.id,
+            createdAt: latestMark.createdAt,
+            actor: latestMark.meta?.author,
+            via: latestMark.meta?.via,
+          }
+        : undefined;
+    }
 
     parent.continuations = storyChildren.map(turnToStoryNode);
     for (let index = 0; index < storyChildren.length; index += 1) {
@@ -320,5 +337,11 @@ function turnToStoryNode(turn: ReadableTurn): StoryNode {
     actor: meta?.author,
     via: meta?.via,
     generatedBy: meta?.generatedBy,
+    kept: meta?.sourceSelected === true ? true : undefined,
+    sourceId: meta?.sourceId,
+    sourceKind: meta?.sourceKind,
+    sourceParents: meta?.sourceParents,
+    extraParentIds: meta?.extraParentIds,
+    rawTags: meta?.rawTags,
   };
 }

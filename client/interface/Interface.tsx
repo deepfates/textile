@@ -56,6 +56,8 @@ import {
 } from "./utils/storyMeta";
 import {
   downloadKeptStoryJson,
+  downloadRawLyncSelections,
+  hasRawLyncSources,
   downloadStoryThreadText,
   downloadStoryTreeJson,
   getStoryPrimaryPath,
@@ -64,7 +66,7 @@ import {
   createStoryIndexShareUrl,
   createStoryShareUrl,
   createStoryThreadShareUrl,
-  importConversationLoomText,
+  importLyncOrConversationText,
   getStoryReferenceFromLocation,
   getStoryIndex,
   getLyncSyncSnapshot,
@@ -81,6 +83,7 @@ import {
 import { getRegisteredMode } from "./modes/modeRegistry";
 import { AuthorshipIndicator } from "./components/AuthorshipIndicator";
 import { CurationIndicator } from "./components/CurationIndicator";
+import { RawLyncIndicator } from "./components/RawLyncIndicator";
 
 const DEFAULT_PARAMS = {
   temperature: 1.0,
@@ -392,8 +395,8 @@ export const GamepadInterface = () => {
     annotateCurrentNode,
   } = useStoryTree(menuParams);
 
-  // Import a conversation-loom snapshot two ways — drop a file anywhere (mouse),
-  // or the keyboard-reachable "Import conversation" action in the Stories drawer
+  // Import raw `.lync` or a conversation snapshot two ways — drop a file anywhere,
+  // or use the keyboard-reachable "Import Lync" action in the Stories drawer.
   // (d-pad → Enter opens the file picker). Both share one result path. Neither
   // adds a Stories row, so the base-model story flow + drawer row math are
   // untouched; the notice keeps success AND failure visible (NOTHING-SILENT).
@@ -408,6 +411,10 @@ export const GamepadInterface = () => {
       showImportNotice(
         `Imported "${result.title}" — ${result.turnCount} ${
           result.turnCount === 1 ? "turn" : "turns"
+        }${
+          result.kind === "raw-lync"
+            ? ` · ${result.annotationCount ?? 0} annotations · ${result.diagnosticCount ?? 0} diagnostics`
+            : ""
         }`,
       );
     },
@@ -425,7 +432,7 @@ export const GamepadInterface = () => {
     onError: handleConversationImportError,
   });
 
-  // Hidden file input driven by the keyboard "Import conversation" action. The
+  // Hidden file input driven by the keyboard "Import Lync" action. The
   // action calls .click() to open the OS picker; the change handler runs the
   // SAME import path the drop hook uses. Reset value so re-picking the same file
   // fires change again.
@@ -440,7 +447,9 @@ export const GamepadInterface = () => {
       input.value = "";
       if (!file) return;
       try {
-        handleConversationImported(await importConversationLoomText(await file.text()));
+        handleConversationImported(
+          await importLyncOrConversationText(await file.text(), file.name),
+        );
       } catch (error) {
         handleConversationImportError(error);
       }
@@ -564,7 +573,8 @@ export const GamepadInterface = () => {
     (key: string) => {
       const tree = trees[key];
       if (!tree) return;
-      downloadKeptStoryJson(key, tree);
+      if (hasRawLyncSources(tree.root)) downloadRawLyncSelections(key, tree);
+      else downloadKeptStoryJson(key, tree);
     },
     [trees]
   );
@@ -829,7 +839,7 @@ export const GamepadInterface = () => {
       const columnTypes: Array<
         "story" | "share" | "thread-link" | "json" | "thread" | "kept"
       > = ["story", "share", "thread-link", "json", "thread", "kept"];
-      // Rows 0 (Sort → Index link) and 1 (New Story → Import conversation)
+      // Rows 0 (Sort → Index link) and 1 (New Story → Import Lync)
       // each carry exactly one trailing action at column 1; stories (rows 2+)
       // carry the full sub-action set.
       const maxColumnFor = (index: number) =>
@@ -1505,12 +1515,12 @@ export const GamepadInterface = () => {
       data-story-ready={currentLoomReady ? "true" : "false"}
     >
       <InstallPrompt />
-      {/* Hidden picker for the keyboard "Import conversation" action. Off the
+      {/* Hidden picker for the keyboard "Import Lync" action. Off the
           keyboard grid; triggered by openConversationFilePicker(). */}
       <input
         ref={conversationFileInputRef}
         type="file"
-        accept="application/json,.json"
+        accept="application/x-lync+jsonl,.lync,.jsonl,application/json,.json"
         aria-hidden="true"
         tabIndex={-1}
         style={{ display: "none" }}
@@ -1839,7 +1849,7 @@ export const GamepadInterface = () => {
                           ? "Sort"
                           : selectedTreeIndex === 1
                             ? selectedTreeColumn === 1
-                              ? "Import conversation"
+                              ? "Import Lync"
                               : "+ New Story"
                             : orderedKeys[selectedTreeIndex - 2] ?? ""
                         : "";
@@ -1895,11 +1905,13 @@ export const GamepadInterface = () => {
                     (path[currentDepth], same as EDIT), so its curation state is
                     narrated for THAT node — a property of focus, not chrome. */}
                 <CurationIndicator node={getCurrentPath()[currentDepth]} />
+                <RawLyncIndicator node={getCurrentPath()[currentDepth]} />
               </div>
             ) : null}
             {screen === null && projection === "map" ? (
               <div className="story-focus-cluster story-focus-cluster--map">
                 <CurationIndicator node={highlightedNode} />
+                <RawLyncIndicator node={highlightedNode} />
               </div>
             ) : null}
             <LyncSyncIndicator status={lyncSyncStatus} />

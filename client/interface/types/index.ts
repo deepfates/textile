@@ -36,6 +36,16 @@ export interface StoryAnnotation {
   createdAt: number;
 }
 
+/** A protocol annotation carried from a raw `.lync` corpus. */
+export interface RawLyncTag {
+  annotationId: string;
+  label: string;
+  tag: string;
+  clusterId?: number;
+  rating?: string;
+  actor: string;
+}
+
 export interface StoryNode {
   id: string;
   text: string;
@@ -56,6 +66,15 @@ export interface StoryNode {
   kept?: boolean;
   /** Notes attached to this turn (annotation turns), in append order. */
   annotations?: StoryAnnotation[];
+  /** Exact protocol identity when this node was projected from raw `.lync`. */
+  sourceId?: string;
+  sourceKind?: string;
+  sourceParents?: string[];
+  /** DAG parents after parents[0], which alone defines Textile navigation. */
+  extraParentIds?: string[];
+  rawTags?: RawLyncTag[];
+  /** The newest positive Textile keep event, used as the selection event id. */
+  keepMark?: { id: string; createdAt: number; actor?: string; via?: string };
 }
 
 export interface MenuScreenProps {

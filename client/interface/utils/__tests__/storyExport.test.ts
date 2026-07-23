@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { buildKeptStoryExport, collectKeptEntries } from "../storyExport";
+import {
+  buildKeptStoryExport,
+  buildRawLyncSelectionEvents,
+  collectKeptEntries,
+  hasRawLyncSources,
+} from "../storyExport";
 import type { StoryNode } from "../../types";
 
 // A small curated tree: root → (A kept) → (A1) , (B) , where A carries a note.
@@ -65,5 +70,70 @@ describe("curated (KEPT) export", () => {
     tree.root.continuations![0].kept = undefined;
     const payload = buildKeptStoryExport("Story 1", tree);
     expect(payload.kept).toEqual([]);
+  });
+});
+
+describe("raw Lync selection export", () => {
+  it("targets exact source siblings with the positive keep event identity", () => {
+    const A = "0197e6a0-4a09-7000-8000-000000000001";
+    const B = "0197e6a0-4a09-7000-8000-000000000002";
+    const mark = "0197e6a0-4a09-7000-8000-00000000000e";
+    const tree: { root: StoryNode } = {
+      root: {
+        id: "virtual",
+        text: "corpus",
+        origin: "unknown",
+        continuations: [
+          {
+            id: "internal-a",
+            sourceId: A,
+            text: "A",
+            origin: "model",
+            kept: true,
+            keepMark: { id: mark, createdAt: Date.parse("2026-07-06T04:10:15Z"), actor: "ada", via: "textile-browser" },
+            continuations: [],
+          },
+          {
+            id: "internal-b",
+            sourceId: B,
+            text: "B",
+            origin: "model",
+            continuations: [],
+          },
+        ],
+      },
+    };
+
+    expect(hasRawLyncSources(tree.root)).toBe(true);
+    expect(buildRawLyncSelectionEvents(tree)).toEqual([
+      {
+        v: 1,
+        id: mark,
+        kind: "lync/annotation",
+        at: "2026-07-06T04:10:15.000Z",
+        author: { actor: "ada", via: "textile-browser" },
+        parents: [A, B],
+        payload: {
+          label: "selection",
+          chosen: [A],
+          shown: [A, B],
+          basis: "human pick",
+        },
+      },
+    ]);
+  });
+
+  it("does not duplicate a selection imported from the corpus", () => {
+    const tree: { root: StoryNode } = {
+      root: {
+        id: "internal",
+        sourceId: "0197e6a0-4a09-7000-8000-000000000001",
+        text: "already selected",
+        origin: "model",
+        kept: true,
+        continuations: [],
+      },
+    };
+    expect(buildRawLyncSelectionEvents(tree)).toEqual([]);
   });
 });

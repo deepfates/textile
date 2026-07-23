@@ -10,7 +10,8 @@
     "prod": "NODE_ENV=production bun run.ts --mode=production",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test ./server ./client",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:corpus-loop": "bun scripts/verify-corpus-loop.ts"
   },
   "dependencies": {
     "@ax-llm/ax": "^14.0.39",

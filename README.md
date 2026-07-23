@@ -1,5 +1,18 @@
 # textile
 
+## Raw Lync corpus acceptance
+
+Textile opens raw `.lync` event unions directly. Its reader follows only the
+first parent as a tree, while retaining source IDs, extra DAG parents, and
+Curare cluster annotations. Keeps export as standard `lync/annotation`
+selection events for Splice.
+
+To verify the seam against current source checkouts (nothing is published):
+
+```sh
+CURARE_ROOT=/path/to/curare SPLICE_ROOT=/path/to/splice bun run verify:corpus-loop
+```
+
 <p align="center">
   <img src="client/assets/screenshot-1.png" width="300" alt="textile reading view" />
   <img src="client/assets/screenshot-2.png" width="300" alt="textile minimap view" />

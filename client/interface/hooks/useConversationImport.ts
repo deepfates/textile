@@ -1,14 +1,13 @@
 import { useEffect } from "react";
 
 import {
-  importConversationLoomText,
+  importLyncOrConversationText,
   type ImportedConversation,
 } from "../lync/storyRuntime";
 
 /**
- * The running-app entry path for a conversation loom: drop a snapshot file
- * (splice's `convertClaudeSessionToLoomFile` output — a session framed as a
- * lync conversation loom) anywhere on the window to import it and open it.
+ * The running-app entry path for raw `.lync` or a conversation-loom snapshot:
+ * drop either file anywhere on the window to import it and open it.
  *
  * Drag-and-drop deliberately lives OUTSIDE the keyboard-driven story grid: it
  * adds no rows to the Stories list and shifts no cursor math, so the base-model
@@ -48,11 +47,11 @@ export function useConversationImport({
       void (async () => {
         try {
           const text = await file.text();
-          const result = await importConversationLoomText(text);
+          const result = await importLyncOrConversationText(text, file.name);
           onImported(result);
         } catch (error) {
           if (onError) onError(error);
-          else console.error("Conversation import failed:", error);
+          else console.error("Lync import failed:", error);
         }
       })();
     };

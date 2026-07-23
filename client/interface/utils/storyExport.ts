@@ -147,3 +147,76 @@ export const downloadKeptStoryJson = (
   const filename = `${sanitizeForFilename(key)}-kept.json`;
   triggerDownload(filename, JSON.stringify(payload, null, 2), "application/json");
 };
+
+export interface RawLyncSelectionEvent {
+  v: 1;
+  id: string;
+  kind: "lync/annotation";
+  at: string;
+  author: { actor: string; via?: string };
+  parents: string[];
+  payload: {
+    label: "selection";
+    chosen: string[];
+    shown: string[];
+    basis: "human pick";
+  };
+}
+
+/** True when a tree is Textile's projection of protocol-level source events. */
+export const hasRawLyncSources = (root: StoryNode): boolean => {
+  if (root.sourceId) return true;
+  return (root.continuations ?? []).some(hasRawLyncSources);
+};
+
+/**
+ * Export NEW positive keep marks as standard Lync selection annotations.
+ * Imported selections have `kept` but no `keepMark`, so they are not duplicated.
+ * `shown` is the set of source siblings visible at that navigation decision.
+ */
+export const buildRawLyncSelectionEvents = (
+  tree: { root: StoryNode },
+): RawLyncSelectionEvent[] => {
+  const result: RawLyncSelectionEvent[] = [];
+  const walk = (node: StoryNode, siblings: StoryNode[]) => {
+    if (node.sourceId && node.kept === true && node.keepMark) {
+      const shown = siblings.flatMap((sibling) => sibling.sourceId ?? []);
+      const comparison = shown.length > 0 ? shown : [node.sourceId];
+      result.push({
+        v: 1,
+        id: node.keepMark.id,
+        kind: "lync/annotation",
+        at: new Date(node.keepMark.createdAt).toISOString(),
+        author: {
+          actor: node.keepMark.actor ?? "textile-user",
+          ...(node.keepMark.via ? { via: node.keepMark.via } : {}),
+        },
+        parents: comparison,
+        payload: {
+          label: "selection",
+          chosen: [node.sourceId],
+          shown: comparison,
+          basis: "human pick",
+        },
+      });
+    }
+    const children = node.continuations ?? [];
+    for (const child of children) walk(child, children);
+  };
+  walk(tree.root, [tree.root]);
+  return result;
+};
+
+/** Download raw-corpus keeps as newline-delimited, Splice-compatible events. */
+export const downloadRawLyncSelections = (
+  key: string,
+  tree: { root: StoryNode },
+): void => {
+  const events = buildRawLyncSelectionEvents(tree);
+  const body = events.map((event) => JSON.stringify(event)).join("\n");
+  triggerDownload(
+    `${sanitizeForFilename(key)}-selections.lync`,
+    body ? `${body}\n` : "",
+    "application/x-lync+jsonl",
+  );
+};

@@ -25,6 +25,8 @@ import { createLoomClient } from "@deepfates/lync/client";
 import { upsertLoom } from "@deepfates/lync/indexes/entries";
 import type { LoomIndex } from "@deepfates/lync/indexes";
 import { createLoreLoomIndexes } from "./loreIndex";
+import { projectRawLyncFile } from "./rawLync";
+import type { RawLyncTag } from "../types";
 import type {
   StoryEntryMeta,
   StoryLoom,
@@ -435,6 +437,14 @@ export interface ConversationTurnPayload {
 export interface ConversationTurnMeta {
   role: string;
   author: string;
+  via?: string;
+  rawVirtual?: boolean;
+  sourceId?: string;
+  sourceKind?: string;
+  sourceParents?: string[];
+  extraParentIds?: string[];
+  rawTags?: RawLyncTag[];
+  sourceSelected?: boolean;
 }
 /** A conversation loom's own meta: marks the profile + carries a title. */
 export interface ConversationLoomMeta {
@@ -518,6 +528,9 @@ export interface ImportedConversation {
   loomId: string;
   title: string;
   turnCount: number;
+  kind?: "conversation" | "raw-lync";
+  annotationCount?: number;
+  diagnosticCount?: number;
 }
 
 /**
@@ -565,7 +578,36 @@ async function registerConversationLoomInIndex(
 export async function importConversationLoomText(
   text: string,
 ): Promise<ImportedConversation> {
-  return importConversationLoom(parseConversationSnapshot(text));
+  return {
+    ...(await importConversationLoom(parseConversationSnapshot(text))),
+    kind: "conversation",
+  };
+}
+
+/** Project raw protocol events into Textile without changing their identity. */
+export async function importRawLyncText(
+  text: string,
+  filename = "Imported Lync corpus",
+): Promise<ImportedConversation> {
+  const projection = projectRawLyncFile(text, filename);
+  const imported = await importConversationLoom(projection.snapshot);
+  return {
+    ...imported,
+    kind: "raw-lync",
+    turnCount: projection.sourceEventCount,
+    annotationCount: projection.annotationCount,
+    diagnosticCount: projection.diagnosticCount,
+  };
+}
+
+/** File-aware import keeps snapshot JSON and raw `.lync` as distinct contracts. */
+export async function importLyncOrConversationText(
+  text: string,
+  filename: string,
+): Promise<ImportedConversation> {
+  return /\.(lync|jsonl)$/i.test(filename)
+    ? importRawLyncText(text, filename)
+    : importConversationLoomText(text);
 }
 
 export async function listStoryEntries() {
