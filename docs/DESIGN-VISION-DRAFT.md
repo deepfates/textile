@@ -1,12 +1,12 @@
 # textile design vision — DRAFT
 
 *Agent-facing brief. DRAFT: the intentions and constraints below are collected from
-the owner's own statements, commits, and design docs (sources cited inline); the
-open questions at the end are his to rule on. Read this before touching any
-interface surface. Companion deep-dives: `docs/HANDOFF-floor-grammar-mentalmodel.md`
-(the full mental model), `docs/floor-redesign-consult-fable.md` and
-`docs/floor-descend-continuity-consult-fable.md` (floor/dial specifics),
-`docs/srcl-migration-notes.md` (styling map).*
+the owner's own statements, commits, and design evidence; the open questions at
+the end are his to rule on. Read this before touching any interface surface.
+Canonical implementation detail lives beside the code, including
+`docs/floor-descend-continuity-consult-fable.md` for floor/dial behavior and
+`docs/srcl-migration-notes.md` for the styling map. Raw consultation and handoff
+notes are source evidence, not additional operating manuals.*
 
 ## What textile is
 
