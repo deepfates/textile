@@ -16,6 +16,11 @@ To verify the seam against current source checkouts (nothing is published):
 CURARE_ROOT=/path/to/curare SPLICE_ROOT=/path/to/splice bun run verify:corpus-loop
 ```
 
+To inspect that synthetic fixture in the running interface, start Textile with
+`bun run dev`, open `http://localhost:5173`, and drag
+`client/interface/lync/__tests__/fixtures/corpus-loop.lync` anywhere into the
+window. The import opens immediately; press Escape to show its branch map.
+
 <p align="center">
   <img src="client/assets/screenshot-1.png" width="300" alt="textile reading view" />
   <img src="client/assets/screenshot-2.png" width="300" alt="textile minimap view" />
